@@ -433,8 +433,10 @@ async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
     original_price_with_vat = data['original_price']
     rub_total = currency_service.convert_price(result['total'])
     rub_original_price_without_vat = currency_service.convert_price(data['original_price'] * 0.81)
-    final_rub_total = currency_service.convert_price(original_price_without_vat + delivery_cost_to_warehouse + delivery_cost + (original_price_without_vat + delivery_cost_to_warehouse + delivery_cost) * 0.15)
-    final_price_without_vat = original_price_without_vat + delivery_cost_to_warehouse + delivery_cost + (original_price_without_vat + delivery_cost_to_warehouse + delivery_cost) * 0.15
+    service_commission_amount = (original_price_without_vat + delivery_cost_to_warehouse + delivery_cost) * 0.15
+    insurance_fee_amount = (original_price_without_vat + service_commission_amount) * 0.03
+    final_price_without_vat = original_price_without_vat + delivery_cost_to_warehouse + delivery_cost + service_commission_amount + insurance_fee_amount
+    final_rub_total = currency_service.convert_price(final_price_without_vat)
     final_price_with_vat = final_price_without_vat * 1.19
     await state.set_state(PriceCalculationStates.waiting_for_product_link)
     # Вычисляем значения в рублях отдельно
@@ -444,9 +446,11 @@ async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
     rub_delivery_cost_value = currency_service.convert_price(delivery_cost)
     rub_delivery_cost = f"{rub_delivery_cost_value:,.0f}".replace(',', ' ')
     
-    service_commission_amount = (original_price_without_vat + delivery_cost_to_warehouse + delivery_cost) * 0.15
     rub_service_commission_value = currency_service.convert_price(service_commission_amount)
     rub_service_commission = f"{rub_service_commission_value:,.0f}".replace(',', ' ')
+    
+    rub_insurance_fee_value = currency_service.convert_price(insurance_fee_amount)
+    rub_insurance_fee = f"{rub_insurance_fee_value:,.0f}".replace(',', ' ')
     
     savings_amount = original_price_with_vat - original_price_without_vat
     rub_savings_value = currency_service.convert_price(savings_amount)
@@ -457,6 +461,7 @@ async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
         f"🚚 Стоимость доставки от интернет-магазина до нашего склада в Германии: €{delivery_cost_to_warehouse:.2f} или {rub_delivery_cost_to_warehouse}₽\n\n"
         f"📦 Доставка из Германии до РФ:\nТип: {get_delivery_type_name(delivery_type)}\nВес: {weight} кг\nСтоимость: €{delivery_cost:.2f} или {rub_delivery_cost}₽\n\n"
         f"💼 Комиссия сервиса (15%): €{service_commission_amount:.2f} или {rub_service_commission}₽\n\n"
+        f"🛡️ Страховой сбор (3%): €{insurance_fee_amount:.2f} или {rub_insurance_fee}₽\n\n"
         f"💶 ИТОГО: €{final_price_without_vat:.2f} или {f'{final_rub_total:,.0f}'.replace(',', ' ')}₽\n\n" 
         f"*Экономия составила €{savings_amount:.2f} или {rub_savings}₽ за счёт вычета нами суммы европейского НДС*\n\n"
         f"🔗 Если Вас всё устраивает, укажите, пожалуйста, ссылку на товар:",

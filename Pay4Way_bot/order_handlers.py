@@ -162,7 +162,9 @@ async def process_address(message: types.Message, state: FSMContext):
             order_summary += "\n"
     subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
     service_commission = round(subtotal * 0.15, 2)
-    total_cost = round(subtotal + service_commission, 2)
+    # Страховой сбор 3% от стоимости товара и комиссии сервиса (не включая доставку)
+    insurance_fee = round((total_products_without_vat + service_commission) * 0.03, 2)
+    total_cost = round(subtotal + service_commission + insurance_fee, 2)
     savings = total_products_with_vat - total_products_without_vat
     
     # Вычисляем конвертации валют заранее
@@ -170,6 +172,7 @@ async def process_address(message: types.Message, state: FSMContext):
     rub_delivery_to_warehouse = currency_service.convert_price(delivery_cost_to_warehouse)
     rub_delivery_from_germany = currency_service.convert_price(delivery_cost_from_germany)
     rub_service_commission = currency_service.convert_price(service_commission)
+    rub_insurance_fee = currency_service.convert_price(insurance_fee)
     rub_total_cost = currency_service.convert_price(total_cost)
     rub_savings = currency_service.convert_price(savings)
     
@@ -187,6 +190,8 @@ async def process_address(message: types.Message, state: FSMContext):
    Стоимость доставки: {delivery_cost_from_germany:.2f} € или {f'{rub_delivery_from_germany:,.0f}'.replace(',', ' ')} ₽
 
 💼 **Комиссия сервиса (15%):** {service_commission:.2f} € или {f'{rub_service_commission:,.0f}'.replace(',', ' ')} ₽
+
+🛡️ **Страховой сбор (3%):** {insurance_fee:.2f} € или {f'{rub_insurance_fee:,.0f}'.replace(',', ' ')} ₽
 
 💶 **ИТОГО:** {total_cost:.2f} € или {f'{rub_total_cost:,.0f}'.replace(',', ' ')} ₽
 
@@ -353,7 +358,9 @@ async def save_order_to_sheets(order_data: dict, user_info: dict, order_id: int 
         delivery_cost_from_germany = get_delivery_cost(delivery_type_code, weight)
         subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
         service_commission = round(subtotal * 0.15, 2)
-        total_cost = round(subtotal + service_commission, 2)
+        # Страховой сбор 3% от стоимости товара и комиссии сервиса (не включая доставку)
+        insurance_fee = round((total_products_without_vat + service_commission) * 0.03, 2)
+        total_cost = round(subtotal + service_commission + insurance_fee, 2)
         
         # Формируем строку с общей суммой
         total_amount_str = f"С НДС: €{total_products_with_vat:.2f}, Без НДС: €{total_products_without_vat:.2f} (Тип: {delivery_type_name}, Вес: {weight} кг)"
@@ -376,6 +383,7 @@ async def save_order_to_sheets(order_data: dict, user_info: dict, order_id: int 
             'payment_method': payment_method_name,
             'delivery_cost': f"€{delivery_cost_from_germany:.2f}",
             'service_commission': f"€{service_commission:.2f}",
+            'insurance_fee': f"€{insurance_fee:.2f}",
             'total_cost': f"€{total_cost:.2f}"
         }
         
@@ -442,7 +450,9 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
         total_products_with_vat = sum(product.get('original_price', 0) for product in cart_items)
         subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
         service_commission = round(subtotal * 0.15, 2)
-        total_cost = round(subtotal + service_commission, 2)
+        # Страховой сбор 3% от стоимости товара и комиссии сервиса (не включая доставку)
+        insurance_fee = round((total_products_without_vat + service_commission) * 0.03, 2)
+        total_cost = round(subtotal + service_commission + insurance_fee, 2)
         
         # Формируем сообщение для менеджера
         manager_message = f"""
@@ -496,6 +506,7 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
 🚚 **Доставка до склада:** €{delivery_cost_to_warehouse:.2f}
 📦 **Доставка из Германии:** €{delivery_cost_from_germany:.2f}
 💼 **Комиссия сервиса (15%):** €{service_commission:.2f}
+🛡️ **Страховой сбор (3%):** €{insurance_fee:.2f}
 💶 **ИТОГО:** €{total_cost:.2f}
 
 📅 **Дата заказа:** {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}

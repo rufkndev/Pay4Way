@@ -32,7 +32,7 @@ DELIVERY_TYPES = {
 def calculate_item_price(original_price: float, delivery_type: str, weight: float, with_vat: bool = True) -> float:
     """
     Рассчитывает цену товара по формуле:
-    (Шаг 4 + Шаг 5) = (сумма после добавления доставки) + (сумма после добавления доставки * 0,15)
+    (Шаг 4 + Шаг 5 + Шаг 6) = (сумма после добавления доставки) + (сумма после добавления доставки * 0,15) + (цена товара без НДС + комиссия сервиса) * 0.03
     
     Args:
         original_price (float): Цена товара из Google Shopping
@@ -60,8 +60,10 @@ def calculate_item_price(original_price: float, delivery_type: str, weight: floa
         step4 = step3 + delivery_cost
         # Комиссия сервиса (15%)
         step5 = step4 * 0.15
-        # Финальный расчет: Шаг 4 + Шаг 5
-        calculated_price = step4 + step5
+        # Страховой сбор (3% от цены товара без НДС + комиссии сервиса, но НЕ от доставки)
+        step6 = (price_without_vat + step5) * 0.03
+        # Финальный расчет: Шаг 4 + Шаг 5 + Шаг 6
+        calculated_price = step4 + step5 + step6
         # Если нужно без НДС, убираем НДС (20%)
         if not with_vat:
             calculated_price = calculated_price / 1.20
@@ -158,16 +160,23 @@ def calculate_cart_total(original_price: float, delivery_type: str, weight: floa
         weight (float): Вес товара в кг
         with_vat (bool): С НДС или без НДС
     Returns:
-        dict: Словарь с результатами расчета
+        dict: Словарь с результатами расчета включая страховой сбор
     """
     price_with_vat = calculate_item_price(original_price, delivery_type, weight, True)
     price_without_vat = calculate_item_price(original_price, delivery_type, weight, False)
     delivery_cost = get_delivery_cost(delivery_type, weight)
-    service_fee = (price_without_vat + delivery_cost) * 0.15
+    
+    # Рассчитываем отдельно каждую составляющую
+    original_price_clean = extract_price_value(original_price)
+    item_price_without_vat = original_price_clean - (original_price_clean * 0.19)
+    service_fee = (item_price_without_vat + delivery_cost) * 0.15
+    insurance_fee = (item_price_without_vat + service_fee) * 0.03
+    
     savings = price_with_vat - price_without_vat
     return {
         'total': price_with_vat,
         'service_fee': service_fee,
+        'insurance_fee': insurance_fee,
         'savings': savings,
         'delivery_cost': delivery_cost
     }
@@ -205,13 +214,12 @@ def get_detailed_price_breakdown(cart_items: list, delivery_type: str, weight: f
     calculation_result = calculate_cart_total(cart_items[0]['price'], delivery_type, weight)
     delivery_type_name = get_delivery_type_name(delivery_type)
     delivery_cost = calculation_result['delivery_cost']
+    service_commission = calculation_result['service_fee']
+    insurance_fee = calculation_result['insurance_fee']
     
     # Рассчитываем общую стоимость товаров без НДС
     total_original_price = sum(extract_price_value(item.get('price', 0)) or 0 for item in cart_items)
     total_price_without_vat = total_original_price - (total_original_price * 0.19)
-    
-    # Рассчитываем комиссию сервиса
-    service_commission = (total_price_without_vat + delivery_cost) * 0.15
     
     breakdown = f"""
 📊 **Ваш заказ:**
@@ -226,7 +234,9 @@ def get_detailed_price_breakdown(cart_items: list, delivery_type: str, weight: f
 
 💼 **Комиссия сервиса (15%):** €{service_commission:.2f}
 
-💰 **ИТОГО: {format_price_display(calculation_result['total'])} (а могла бы быть {format_price_display(calculation_result['total'] + calculation_result['service_fee'])})**
+🛡️ **Страховой сбор (3%):** €{insurance_fee:.2f}
+
+💰 **ИТОГО: {format_price_display(calculation_result['total'])}**
 """
     
     return breakdown 
