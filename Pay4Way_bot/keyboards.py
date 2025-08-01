@@ -5,7 +5,7 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
     """Главная клавиатура бота"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔍 Начать поиск", callback_data="start_search")],
-        [InlineKeyboardButton(text="🤓 У меня есть ссылка на товар, хочу узнать стоимость доставки", callback_data="calculate_price")],
+        [InlineKeyboardButton(text="🧮 Рассчитать доставку", callback_data="calculate_price")],
         [InlineKeyboardButton(text="🛍 Корзина", callback_data="cart")],
         [InlineKeyboardButton(text="🚨 Поддержка", callback_data="contacts"), InlineKeyboardButton(text="❓ Кто мы", callback_data="about")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
@@ -40,18 +40,19 @@ def get_product_navigation_keyboard(current_index: int, total_results: int, prod
     if current_index > 0:
         nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"nav_{current_index-1}"))
     if current_index < total_results - 1:
-        nav_row.append(InlineKeyboardButton(text="Листай далее ➡️", callback_data=f"nav_{current_index+1}"))
+        nav_row.append(InlineKeyboardButton(text="Еще товары ➡️", callback_data=f"nav_{current_index+1}"))
     
     if nav_row:
         keyboard_buttons.append(nav_row)
     
     # Основные кнопки действий
     keyboard_buttons.append([
-        InlineKeyboardButton(text="🤓 У меня есть ссылка", callback_data="start_price_calculation")
-    ])
-    keyboard_buttons.append([
         InlineKeyboardButton(text="🛍️ Посмотреть товар", url=product_link) if product_link else InlineKeyboardButton(text="🛍️ Посмотреть товар", callback_data="no_link")
     ])
+    keyboard_buttons.append([
+        InlineKeyboardButton(text="🧮 Рассчитать доставку", callback_data="start_price_calculation")
+    ])
+    
     
     # Кнопка нового поиска
     keyboard_buttons.append([InlineKeyboardButton(text="🔍 Новый поиск", callback_data="start_search")])
@@ -89,7 +90,7 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🔍 Поиск товаров")],
-            [KeyboardButton(text="🤓 У меня есть ссылка на товар, хочу узнать стоимость доставки")],
+            [KeyboardButton(text="🧮 Рассчитать доставку")],
             [KeyboardButton(text="🛍 Корзина")],
             [KeyboardButton(text="🚨 Поддержка"), KeyboardButton(text="❓ Кто мы")],
         ],
@@ -194,7 +195,6 @@ def get_add_to_cart_from_calculation_keyboard() -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data="add_calculated_to_cart")],
         [InlineKeyboardButton(text="🛍 Перейти в корзину", callback_data="cart")],
-        [InlineKeyboardButton(text="💰 Рассчитать стоимость доставки еще одного товара", callback_data="calculate_price_again_product")],
-        [InlineKeyboardButton(text="Перейти в главное меню 🏠", callback_data="back_to_main")]
+        [InlineKeyboardButton(text="🧮 Рассчитать доставку еще одного товара", callback_data="calculate_price_again_product")],
     ])
     return keyboard

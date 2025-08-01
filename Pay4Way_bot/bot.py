@@ -32,7 +32,6 @@ from order_handlers import (
 )
 
 # Импортируем роутер для расчета цены
-from price_calculation_handlers import router as price_calculation_router
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -46,7 +45,6 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # Подключаем роутеры
-dp.include_router(price_calculation_router)
 
 # Сервис поиска товаров теперь импортируется как функция
 
@@ -98,16 +96,18 @@ user_results = {}
 # Хранилище для URL товаров (временное решение)
 product_urls = {}
 
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     welcome_text = """
-💯 Pay4Way — сервис №1 в России для выгодных международных покупок! 🫰
+💯 Pay4Way — сервис №1 в России для выгодных международных покупок!
 
 Мы — первые и единственные, кто предоставляет возможность приобретать товары из Европы 🇪🇺 без уплаты европейского НДС. Это значит, что вы экономите 19% уже на этапе покупки! 
 
-Покупайте практически любой товар из Европы (ссылка на санкционные списки), а мы доставим 🚛✈️🚄его в Россию быстро, безопасно и с гарантией! 
+Покупайте практически любой товар из Европы ([перечень ограничений](https://pay4way.ru/ogranichenia)), а мы доставим 🚛✈️🚄его в Россию быстро, безопасно и с гарантией!
+
+📆 Срок доставки до вашего отделения Почты РФ: 3-4 недели
     
- 
 💬 Начните и убедитесь, как это просто и удобно
 """
 
@@ -118,53 +118,217 @@ async def cmd_start(message: types.Message):
         ]
     )
 
-    await message.answer(welcome_text, reply_markup=inline_kb)
+    await message.answer(welcome_text, reply_markup=inline_kb, parse_mode="Markdown")
 
-# Обработка инлайн-кнопки
 @dp.callback_query(lambda c: c.data == "start_go")
 async def on_go_clicked(callback: types.CallbackQuery):
     await callback.message.edit_reply_markup()  # Удаляем кнопку
-    await callback.message.answer("Главное меню:", reply_markup=get_main_reply_keyboard())
+    await callback.message.answer("🚀", reply_markup=get_main_reply_keyboard())
     await callback.answer()
 # Обработчики Reply-кнопок
-@dp.message(lambda message: message.text == "🏠 Главное меню")
-async def main_menu_handler(message: types.Message, state: FSMContext):
-    """Обработчик кнопки главное меню"""
-    welcome_text = """
-🎉 Главное меню
-Добро пожалов
 
-Pay4Way — сервис №1 в России для выгодных международных покупок! 🚀💎
+@dp.message(lambda message: message.text == "🔍 Поиск товаров")
+async def search_handler(message: types.Message, state: FSMContext):
+    """Обработчик кнопки поиск товаров"""
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
+    
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
+    await state.set_state(SearchStates.waiting_for_query)
+    await message.answer("🔍 Введите марку и модель товара на английском (например, Nike zoom):")
+    await message.answer("🔍")
+    
+@dp.callback_query(lambda c: c.data == "start_search")
+async def start_search_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик кнопки начала поиска"""
+    await state.set_state(SearchStates.waiting_for_query)
+    await callback.message.answer("🔍 Введите марку и модель товара на английском (например, Nike zoom):")
+    await callback.message.answer("🔍")
 
-Мы — первые и единственные, кто предоставляет возможность приобретать товары из Европы без уплаты НДС. Это значит, что вы экономите до 19% уже на этапе покупки! 💰✨
+@dp.message(lambda message: message.text == "❓ Кто мы")
+async def about_handler(message: types.Message, state: FSMContext):
+    """Обработчик кнопки информация о нас"""
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
+    
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
+    text = """
+Кто мы?
 
-🛍️ Покупайте практически любой товар из Европы (проверьте санкционный список), а мы доставим его в Россию быстро, безопасно и с гарантией! 🚛✈️
+Мы – чешское юридическое лицо. 
+Наши реквизиты:
+KPSports s.r.o. 
+IČO 22332294
+Kotkova 50/16, Liberec XIV-Ruprechtice, 460 14 Liberec
 
-🤖 Этот бот — ваш персональный помощник:
-✔️ Поможет найти нужный товар 🔍
-✔️ Рассчитает стоимость доставки 🧮
-✔️ Подскажет, как оформить заказ 📦
-✔️ Сопроводит на всех этапах покупки 🤝
+Проверить нас можно в [реестре Министерства юстиции Чешской Республики](https://msp.gov.cz/), указав наш ИНН (IČO). 
 
-💬 Просто начните — и убедитесь, как это удобно! 
 
-Для начала работы нажмите ◻️ в правой части поисковой строки
 """
-    await message.answer(welcome_text)
-    await message.answer("🏠")
+    await message.answer(text, parse_mode="Markdown")
 
-@dp.message(lambda message: message.text == "🤓 У меня есть ссылка на товар, хочу узнать стоимость доставки")
-async def start_price_calculation(message: types.Message, state: FSMContext):
+@dp.message(lambda message: message.text == "🚨 Поддержка")
+async def contacts_handler(message: types.Message, state: FSMContext):
+    """Обработчик кнопки контакты"""
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
+    
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
+    
+    text = """🚨 Поддержка
+
+Свяжитесь с нами любым удобным способом:
+
+📧 Email:
+support@pay4way.ru
+
+📱Telegram:
+@pay4way_support
+
+🌐 Сайт:
+https://pay4way.ru"""
+    await message.answer(text)
+
+
+@dp.message(lambda message: message.text == "🛍 Корзина")
+async def cart_handler(message: types.Message, state: FSMContext):
     # Сохраняем корзину перед очисткой состояния
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
     
     # Очищаем состояние, но сохраняем корзину
-    await state.clear()
-    await state.update_data(cart=cart)
+    await state.set_data({'cart': cart})
+    
+    # Добавляем отладочную информацию
+    logging.info(f"Просмотр корзины. Размер корзины: {len(cart)}")
+    for i, item in enumerate(cart):
+        logging.info(f"Товар {i+1}: {item.get('title', 'Без названия')[:50]}")
+    
+    cart_text = "🛒 Ваша корзина:\n\n"
+    no_cart_text = "🛒 Корзина пуста!\n\n" 
+    delivery_cost_to_warehouse = 5.00
+
+    if not cart:
+        await message.answer(no_cart_text)
+        return
+
+    # Переменные для подсчета общей суммы
+    total_euro = 0
+    total_rub = 0
+
+    for i, product in enumerate(cart):
+        # Добавляем номер товара
+        cart_text += f"Товар #{i+1}\n\n"
+        
+        # Используем сохранённые параметры или значения по умолчанию
+        price_without_vat = product.get('original_price_without_vat', 0)
+        if price_without_vat == 0:
+            # Если нет сохранённого значения, рассчитываем из цены
+            price = product.get('price', 0)
+            if isinstance(price, str):
+                price = price.replace('€', '').replace('$', '').replace('₽', '').replace(',', '.').strip()
+            try:
+                price_with_vat = float(price)
+                price_without_vat = round(price_with_vat * 0.81, 2)
+            except Exception:
+                price_without_vat = 0.0
+        
+        rub_price_without_vat = currency_service.convert_price(price_without_vat)
+        
+        # Вычисляем стоимость доставки до склада в рублях отдельно
+        rub_delivery_to_warehouse_value = currency_service.convert_price(delivery_cost_to_warehouse)
+        rub_delivery_to_warehouse = f"{rub_delivery_to_warehouse_value:,.0f}".replace(',', ' ')
+        
+        cart_text += (
+            f"🪙 Стоимость товаров: €{price_without_vat} или {f'{rub_price_without_vat:,.0f}'.replace(',', ' ')}₽ (мы уже вычли НДС)\n\n"
+        )
+        cart_text += (
+            f"🚚 Стоимость доставки от интернет-магазина до нашего склада в Германии: €{delivery_cost_to_warehouse:.2f} или {rub_delivery_to_warehouse}₽\n\n"
+        )
+        
+        # Используем сохранённые параметры доставки
+        delivery_type = product.get('delivery_type', 'Маленький пакет')
+        weight = product.get('weight', 1.0)
+        delivery_cost_from_germany = product.get('delivery_cost_from_germany', 12.94)
+        
+        # Вычисляем стоимость доставки из Германии в рублях отдельно
+        rub_delivery_from_germany_value = currency_service.convert_price(delivery_cost_from_germany)
+        rub_delivery_from_germany = f"{rub_delivery_from_germany_value:,.0f}".replace(',', ' ')
+        cart_text += (
+            f"📦 Доставка из Германии до РФ:\n\n"
+            f"Тип: {delivery_type}\n"
+            f"Вес: {weight} кг\n"
+            f"Стоимость доставки: €{delivery_cost_from_germany:.2f} или {rub_delivery_from_germany}₽\n\n"
+        )
+        
+        # Используем сохранённые расчёты или рассчитываем заново
+        if product.get('service_commission') and product.get('total'):
+            service_commission = product.get('service_commission')
+            total = product.get('total')
+        else:
+            subtotal = price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
+            service_commission = round(subtotal * 0.15, 2)
+            total = round(subtotal + service_commission, 2)
+        
+        # Вычисляем комиссию сервиса в рублях отдельно
+        rub_service_commission_value = currency_service.convert_price(service_commission)
+        rub_service_commission = f"{rub_service_commission_value:,.0f}".replace(',', ' ')
+        cart_text += (
+            f"💼 Комиссия нашего сервиса (15%): €{service_commission:.2f} или {rub_service_commission}₽\n\n"
+        )
+        if product.get('link'):
+            cart_text += f"🔗 Ссылка на товар: {product['link']}\n\n"
+        
+        rub_total = currency_service.convert_price(total)
+        cart_text += (
+            f"💶 ИТОГО: €{total} или {f'{rub_total:,.0f}'.replace(',', ' ')}₽\n\n"
+        )
+        
+        # Добавляем к общим суммам
+        total_euro += total
+        total_rub += rub_total
+        
+        # Добавляем разделитель между товарами
+        if i < len(cart) - 1:
+            cart_text += "─" * 30 + "\n\n"
+    
+    # Добавляем общую сумму, если товаров больше одного
+    if len(cart) > 1:
+        cart_text += "=" * 40 + "\n"
+        cart_text += f"**ОБЩАЯ СУММА ЗАКАЗА:**\n"
+        cart_text += f"💶 €{total_euro:.2f} или {f'{total_rub:,.0f}'.replace(',', ' ')}₽\n\n"
+    
+    # Создаем клавиатуру с кнопками удаления отдельных товаров
+    keyboard_buttons = []
+    
+    # Добавляем кнопки удаления для каждого товара
+    for i in range(len(cart)):
+        keyboard_buttons.append([InlineKeyboardButton(text=f"🗑️ Удалить товар #{i+1}", callback_data=f"remove_item_{i}")])
+    
+    # Добавляем основные кнопки
+    keyboard_buttons.append([
+        InlineKeyboardButton(text="🗑️ Очистить корзину", callback_data="clear_cart"), 
+        InlineKeyboardButton(text="💳 Оформить заказ", callback_data="order_from_cart")
+    ])
+    
+    next_keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    await message.answer(cart_text, reply_markup=next_keyboard, parse_mode=None)
+
+
+
+@dp.message(lambda message: message.text == "🧮 Рассчитать доставку")
+async def start_price_calculation(message: types.Message, state: FSMContext):
+    # Сохраняем корзину перед очисткой состояния
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
     
     await state.set_state(PriceCalculationStates.waiting_for_original_price)
-    await message.answer("💰Введите цену товара:", reply_markup=get_cancel_price_calculation_keyboard())
+    await message.answer("💰Введите цену товара:")
 
 @dp.message(PriceCalculationStates.waiting_for_original_price)
 async def input_original_price(message: types.Message, state: FSMContext):
@@ -285,8 +449,7 @@ async def calculate_price_again_product(callback: types.CallbackQuery, state: FS
     cart = current_data.get('cart', [])
     
     # Очищаем состояние, но сохраняем корзину
-    await state.clear()
-    await state.update_data(cart=cart)
+    await state.set_data({'cart': cart})
     
     await state.set_state(PriceCalculationStates.waiting_for_original_price)
     await callback.message.answer("Введите цену товара :", reply_markup=get_cancel_price_calculation_keyboard())
@@ -295,6 +458,12 @@ async def calculate_price_again_product(callback: types.CallbackQuery, state: FS
 @dp.message(lambda message: message.text == "⬅️ Назад")
 async def back_handler(message: types.Message, state: FSMContext):
     """Обработчик кнопки назад"""
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
+    
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
+    
     welcome_text = """
 🎉 Главное меню
 Добро пожаловать в Pay4Way!
@@ -315,132 +484,9 @@ async def back_handler(message: types.Message, state: FSMContext):
     await message.answer(welcome_text, reply_markup=get_main_reply_keyboard())
     await message.answer("⬅️")
 
-@dp.message(lambda message: message.text == "🔍 Поиск товаров")
-async def search_handler(message: types.Message, state: FSMContext):
-    """Обработчик кнопки поиск товаров"""
-    await state.set_state(SearchStates.waiting_for_query)
-    await message.answer("🔍 Введите марку и модель товара на английском (например, Nike zoom):")
-    await message.answer("🔍")
 
-@dp.message(lambda message: message.text == "🛍 Корзина")
-async def cart_handler(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    cart = data.get('cart', [])
-    
-    # Добавляем отладочную информацию
-    logging.info(f"Просмотр корзины. Размер корзины: {len(cart)}")
-    for i, item in enumerate(cart):
-        logging.info(f"Товар {i+1}: {item.get('title', 'Без названия')[:50]}")
-    
-    cart_text = "🛒 Ваша корзина:\n\n"
-    no_cart_text = "🛒 Корзина пуста!\n\n" 
-    delivery_cost_to_warehouse = 5.00
 
-    if not cart:
-        await message.answer(no_cart_text)
-        return
 
-    # Переменные для подсчета общей суммы
-    total_euro = 0
-    total_rub = 0
-
-    for i, product in enumerate(cart):
-        # Добавляем номер товара
-        cart_text += f"Товар #{i+1}\n\n"
-        
-        # Используем сохранённые параметры или значения по умолчанию
-        price_without_vat = product.get('original_price_without_vat', 0)
-        if price_without_vat == 0:
-            # Если нет сохранённого значения, рассчитываем из цены
-            price = product.get('price', 0)
-            if isinstance(price, str):
-                price = price.replace('€', '').replace('$', '').replace('₽', '').replace(',', '.').strip()
-            try:
-                price_with_vat = float(price)
-                price_without_vat = round(price_with_vat * 0.81, 2)
-            except Exception:
-                price_without_vat = 0.0
-        
-        rub_price_without_vat = currency_service.convert_price(price_without_vat)
-        
-        # Вычисляем стоимость доставки до склада в рублях отдельно
-        rub_delivery_to_warehouse_value = currency_service.convert_price(delivery_cost_to_warehouse)
-        rub_delivery_to_warehouse = f"{rub_delivery_to_warehouse_value:,.0f}".replace(',', ' ')
-        
-        cart_text += (
-            f"🪙 Стоимость товаров: €{price_without_vat} или {f'{rub_price_without_vat:,.0f}'.replace(',', ' ')}₽ (мы уже вычли НДС)\n\n"
-        )
-        cart_text += (
-            f"🚚 Стоимость доставки от интернет-магазина до нашего склада в Германии: €{delivery_cost_to_warehouse:.2f} или {rub_delivery_to_warehouse}₽\n\n"
-        )
-        
-        # Используем сохранённые параметры доставки
-        delivery_type = product.get('delivery_type', 'Маленький пакет')
-        weight = product.get('weight', 1.0)
-        delivery_cost_from_germany = product.get('delivery_cost_from_germany', 12.94)
-        
-        # Вычисляем стоимость доставки из Германии в рублях отдельно
-        rub_delivery_from_germany_value = currency_service.convert_price(delivery_cost_from_germany)
-        rub_delivery_from_germany = f"{rub_delivery_from_germany_value:,.0f}".replace(',', ' ')
-        cart_text += (
-            f"📦 Доставка из Германии до РФ:\n\n"
-            f"Тип: {delivery_type}\n"
-            f"Вес: {weight} кг\n"
-            f"Стоимость доставки: €{delivery_cost_from_germany:.2f} или {rub_delivery_from_germany}₽\n\n"
-        )
-        
-        # Используем сохранённые расчёты или рассчитываем заново
-        if product.get('service_commission') and product.get('total'):
-            service_commission = product.get('service_commission')
-            total = product.get('total')
-        else:
-            subtotal = price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
-            service_commission = round(subtotal * 0.15, 2)
-            total = round(subtotal + service_commission, 2)
-        
-        # Вычисляем комиссию сервиса в рублях отдельно
-        rub_service_commission_value = currency_service.convert_price(service_commission)
-        rub_service_commission = f"{rub_service_commission_value:,.0f}".replace(',', ' ')
-        cart_text += (
-            f"💼 Комиссия нашего сервиса (15%): €{service_commission:.2f} или {rub_service_commission}₽\n\n"
-        )
-        if product.get('link'):
-            cart_text += f"🔗 Ссылка на товар: {product['link']}\n\n"
-        
-        rub_total = currency_service.convert_price(total)
-        cart_text += (
-            f"💶 ИТОГО: €{total} или {f'{rub_total:,.0f}'.replace(',', ' ')}₽\n\n"
-        )
-        
-        # Добавляем к общим суммам
-        total_euro += total
-        total_rub += rub_total
-        
-        # Добавляем разделитель между товарами
-        if i < len(cart) - 1:
-            cart_text += "─" * 30 + "\n\n"
-    
-    # Добавляем общую сумму, если товаров больше одного
-    if len(cart) > 1:
-        cart_text += "=" * 40 + "\n"
-        cart_text += f"**ОБЩАЯ СУММА ЗАКАЗА:**\n"
-        cart_text += f"💶 €{total_euro:.2f} или {f'{total_rub:,.0f}'.replace(',', ' ')}₽\n\n"
-    
-    # Создаем клавиатуру с кнопками удаления отдельных товаров
-    keyboard_buttons = []
-    
-    # Добавляем кнопки удаления для каждого товара
-    for i in range(len(cart)):
-        keyboard_buttons.append([InlineKeyboardButton(text=f"🗑️ Удалить товар #{i+1}", callback_data=f"remove_item_{i}")])
-    
-    # Добавляем основные кнопки
-    keyboard_buttons.append([
-        InlineKeyboardButton(text="🗑️ Очистить корзину", callback_data="clear_cart"), 
-        InlineKeyboardButton(text="💳 Оформить заказ", callback_data="order_from_cart")
-    ])
-    
-    next_keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-    await message.answer(cart_text, reply_markup=next_keyboard, parse_mode=None)
 
 @dp.callback_query(lambda c: c.data == "cart_next")
 async def cart_next_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -666,86 +712,13 @@ async def cancel_order_handler(callback: types.CallbackQuery, state: FSMContext)
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
     # Очищаем состояние, но сохраняем корзину
-    await state.clear()
-    await state.update_data(cart=cart)
+    await state.set_data({'cart': cart})
     from keyboards import get_main_reply_keyboard
     await callback.message.answer(
         "❌ Заказ отменен.\n\n🏠 Возвращаемся в главное меню:",
         reply_markup=get_main_reply_keyboard()
     )
 
-@dp.message(lambda message: message.text == "ℹ️ Помощь")
-async def help_handler(message: types.Message):
-    """Обработчик кнопки помощь"""
-    help_text = """
-ℹ️ **Помощь по использованию бота**
-
-🔍 **Поиск товаров:**
-• Используйте кнопку "Поиск товаров"
-• Введите название товара
-• Просматривайте результаты с помощью кнопок навигации
-
-🛒 **Корзина:**
-• Добавляйте товары в корзину кнопкой "В корзину"
-• Просматривайте корзину в главном меню
-• Оформляйте заказы
-
-📞 **Поддержка:**
-• Используйте кнопку "Контакты" для связи
-• Обращайтесь к нам с любыми вопросами
-"""
-    await message.answer(help_text, reply_markup=get_help_keyboard(), parse_mode="Markdown")
-
-@dp.message(lambda message: message.text == "🚨 Поддержка")
-async def contacts_handler(message: types.Message):
-    """Обработчик кнопки контакты"""
-    text = """🚨 Поддержка
-
-Свяжитесь с нами любым удобным способом:
-
-📧 Email:
-info@yourcompany.com
-
-📱 Telegram:
-@pay4way_admin
-
-🌐 Сайт:
-https://yourcompany.com
-
-💬 Поддержка:
-@your_support_username
-
-Выберите способ связи:"""
-    await message.answer(text)
-    await message.answer("🚨")
-
-@dp.message(lambda message: message.text == "❓ Кто мы")
-async def about_handler(message: types.Message):
-    """Обработчик кнопки информация о нас"""
-    text = """
-ℹ️ **Информация о нас**
-
-🏢 **О компании:**
-Мы специализируемся на поиске и доставке товаров из Европы. Наша миссия - сделать покупки в европейских магазинах доступными для всех.
-
-👥 **Наша команда:**
-• Опытные специалисты по поиску товаров
-• Менеджеры по работе с клиентами
-• Логистические партнеры в Европе
-
-📈 **Статистика:**
-• Более 1000 успешных доставок
-• Партнерство с 50+ европейскими магазинами
-• Среднее время доставки: 7-14 дней
-
-🎯 **Наши цели:**
-• Предоставить доступ к качественным европейским товарам
-• Обеспечить прозрачность цен и условий
-• Сделать процесс покупки максимально удобным
-
-Выберите раздел для получения подробной информации:
-"""
-    await message.answer(text, parse_mode="Markdown")
 
 @dp.message(lambda message: message.text == "🗑️ Очистить корзину")
 async def clear_cart_reply_handler(message: types.Message, state: FSMContext):
@@ -763,19 +736,15 @@ async def back_to_main_callback(callback: types.CallbackQuery, state: FSMContext
     cart = current_data.get('cart', [])
     
     # Очищаем состояние, но сохраняем корзину
-    await state.clear()
-    await state.update_data(cart=cart)
+    await state.set_data({'cart': cart})
 
     await callback.message.answer("Вы перешли в главное меню !", reply_markup=get_main_reply_keyboard())
     await callback.message.answer("🏠")
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data == "start_search")
-async def start_search_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Обработчик кнопки начала поиска"""
-    await state.set_state(SearchStates.waiting_for_query)
-    await callback.message.answer("🔍 Введите название товара для поиска на сайте Idealo, только на английском языке:")
-    await callback.answer()
+
+
+
 
 # Обработчики помощи
 @dp.callback_query(lambda c: c.data == "help")
@@ -1223,13 +1192,13 @@ async def show_product_card(message: types.Message, user_id: int, index: int):
     card_text = f"""
 🛍️ **{product['title']}**
 
-💰 Цена от: {price_display}
-📊 Всего предложений: {offers_count} шт.
+💰 Цена от: {price_display}\n
+📊 Всего найдено предложений: {offers_count} шт.
 
 *Инструкция:*
-1️⃣ Чтобы выбрать лучшее предложение, размер и цвет нажмите на кнопку «Посмотреть товар»
-2️⃣ Скопируй ссылку на товар из интернет-магазина  
-3️⃣ Запомни цену товара
+1️⃣ Чтобы выбрать лучшее предложение, размер и цвет нажмите на кнопку «🛍️ Посмотреть товар»\n
+2️⃣ После того, как вы нашли нужный товар, скопируйте ссылку на него из интернет-магазина и запомните его стоимость\n
+3️⃣ Вернитесь в бота и нажмите «🧮 Рассчитать доставку». Далее следуйте указаниям бота.\n
 """
     
     keyboard = get_product_navigation_keyboard(
@@ -1414,6 +1383,11 @@ async def cart_callback(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "start_price_calculation")
 async def start_price_calculation(callback: types.CallbackQuery, state: FSMContext):
     """Запуск процесса расчета цены товара"""
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
+    
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
     await callback.answer()
     
     # Очищаем данные предыдущего расчета
@@ -1423,7 +1397,6 @@ async def start_price_calculation(callback: types.CallbackQuery, state: FSMConte
     # Отправляем новое сообщение вместо редактирования
     await callback.message.answer(
         "💰Введите цену товара:",
-        reply_markup=get_cancel_price_calculation_keyboard(),
         parse_mode="Markdown"
     )
 
@@ -1840,7 +1813,7 @@ async def start_order_from_cart(callback: types.CallbackQuery, state: FSMContext
 @dp.callback_query(lambda c: c.data == "no_link")
 async def no_link_callback(callback: types.CallbackQuery):
     """Обработчик для случая отсутствия ссылки на товар"""
-    await callback.answer("⚠️ Ссылка на товар недоступна. Попробуйте другой товар или новый поиск.")
+    await callback.answer("⚠️ Попробуйте другой товар или новый поиск.")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

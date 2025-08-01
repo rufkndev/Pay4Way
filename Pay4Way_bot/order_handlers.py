@@ -79,6 +79,7 @@ async def process_address(message: types.Message, state: FSMContext):
 """
     total_products_without_vat = 0
     total_products_with_vat = 0
+    rub_price_without_vat = 0
     for i, product in enumerate(cart_items, 1):
         price_without_vat = product.get('original_price_without_vat', 0)
         price_with_vat = product.get('original_price', 0)
@@ -94,8 +95,9 @@ async def process_address(message: types.Message, state: FSMContext):
                 price_without_vat = 0.0
         total_products_without_vat += price_without_vat
         total_products_with_vat += price_with_vat
+        rub_price_without_vat = currency_service.convert_price(price_without_vat)
         order_summary += f"{i}. **{product['title']}**\n"
-        order_summary += f"   💶 Цена: {format_price_with_rub(price_without_vat)} без НДС \n"
+        order_summary += f"   💶 Цена: {price_without_vat} € или {f'{rub_price_without_vat:,.0f}'.replace(',', ' ')} ₽ без НДС \n"
         if product.get('link'):
             order_summary += f"   🔗 Ссылка: {product['link']}"
         # Добавляем перевод строки только если это не последний товар
