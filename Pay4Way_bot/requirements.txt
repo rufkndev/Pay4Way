@@ -1,0 +1,6 @@
+aiogram>=3.0.0
+python-dotenv
+aiohttp
+beautifulsoup4
+lxml
+requests 
