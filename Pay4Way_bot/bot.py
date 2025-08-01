@@ -29,7 +29,8 @@ from order_handlers import (
     process_email, 
     process_address, 
     restart_order,
-    confirm_order_callback
+    confirm_order_callback,
+    escape_markdown
 )
 
 # Импортируем роутер для расчета цены
@@ -447,13 +448,17 @@ async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
         weight=weight,
     )
     delivery_cost = get_delivery_cost(delivery_type, weight)
-    original_price_without_vat = data['original_price'] * 0.81
-    original_price_with_vat = data['original_price']
+    original_price_without_vat = (data.get('original_price') or 0) * 0.81
+    original_price_with_vat = data.get('original_price') or 0
     rub_total = currency_service.convert_price(result['total'])
-    rub_original_price_without_vat = currency_service.convert_price(data['original_price'] * 0.81)
+    rub_original_price_without_vat = currency_service.convert_price(original_price_without_vat)
+    delivery_cost = delivery_cost or 0
     service_commission_amount = (original_price_without_vat + delivery_cost_to_warehouse + delivery_cost) * 0.15
     # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
-    insurance_fee_amount = (((original_price_with_vat * 0.81 + delivery_cost + delivery_cost_to_warehouse) * 1.15) - delivery_cost) * 0.03
+    # Защита от None значений
+    safe_original_price_with_vat = original_price_with_vat or 0
+    safe_delivery_cost = delivery_cost or 0
+    insurance_fee_amount = (((safe_original_price_with_vat * 0.81 + safe_delivery_cost + delivery_cost_to_warehouse) * 1.15) - safe_delivery_cost) * 0.03
     final_price_without_vat = original_price_without_vat + delivery_cost_to_warehouse + delivery_cost + service_commission_amount + insurance_fee_amount
     final_rub_total = currency_service.convert_price(final_price_without_vat)
     final_price_with_vat = final_price_without_vat * 1.19
@@ -1309,7 +1314,7 @@ async def show_product_card(message: types.Message, user_id: int, index: int):
         price_display = formatted_price
     
     card_text = f"""
-🛍️ **{product['title']}**
+🛍️ **{escape_markdown(product['title'])}**
 
 💰 Цена от: {price_display}\n
 📊 Всего найдено предложений: {offers_count} шт.
@@ -2075,11 +2080,11 @@ async def back_to_delivery_type_order_handler(callback: types.CallbackQuery, sta
     cart_text = "🛍 **Ваша корзина:**\n\n"
     
     for i, product in enumerate(cart, 1):
-        cart_text += f"{i}. 🛍️ **{product['title']}**\n"
-        cart_text += f"   💰 Цена: {product['price']}\n"
-        cart_text += f"   🏪 Магазин: {product.get('source', 'Не указан')}\n"
+        cart_text += f"{i}. 🛍️ **{escape_markdown(product['title'])}**\n"
+        cart_text += f"   💰 Цена: {escape_markdown(product['price'])}\n"
+        cart_text += f"   🏪 Магазин: {escape_markdown(product.get('source', 'Не указан'))}\n"
         if product.get('link'):
-            cart_text += f"   🔗 Ссылка: {product['link']}\n"
+            cart_text += f"   🔗 Ссылка: {escape_markdown(product['link'])}\n"
         cart_text += "\n"
     
     cart_text += f"📊 **Итого товаров:** {len(cart)} шт.\n\n"

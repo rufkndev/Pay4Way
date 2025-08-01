@@ -11,7 +11,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
-from price_calculator import calculate_cart_total, format_price_display
+from price_calculator import format_price_display
 from formatting_utils import format_total_with_savings, format_price_with_rub
 from services.currency_service import currency_service
 from services.google_sheets_service import GoogleSheetsService
@@ -163,7 +163,10 @@ async def process_address(message: types.Message, state: FSMContext):
     subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
     service_commission = round(subtotal * 0.15, 2)
     # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
-    insurance_fee = round(((((total_products_without_vat / 0.81) * 0.81) + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15 - delivery_cost_from_germany) * 0.03, 2)
+    # Защита от None значений
+    safe_total_without_vat = total_products_without_vat or 0
+    safe_delivery_from_germany = delivery_cost_from_germany or 0
+    insurance_fee = round(((((safe_total_without_vat / 0.81) * 0.81) + safe_delivery_from_germany + delivery_cost_to_warehouse) * 1.15 - safe_delivery_from_germany) * 0.03, 2)
     total_cost = round(subtotal + service_commission + insurance_fee, 2)
     savings = total_products_with_vat - total_products_without_vat
     
@@ -346,20 +349,22 @@ async def save_order_to_sheets(order_data: dict, user_info: dict, order_id: int 
         payment_method = order_data.get('payment_method', 'card')
         
         # Рассчитываем цены по нашей формуле
-        from price_calculator import calculate_cart_total, get_delivery_type_name, get_delivery_cost
-        calculation_result = calculate_cart_total(cart_items, delivery_type_code, weight)
+        from price_calculator import get_delivery_type_name, get_delivery_cost
         delivery_type_name = first_product.get('delivery_type', 'Маленький пакет')  # Используем название из корзины
         payment_method_name = "Карта иностранного банка" if payment_method == "card" else "Криптовалюта"
         
         # Рассчитываем итоговые суммы
-        total_products_without_vat = sum(product.get('original_price_without_vat', 0) for product in cart_items)
-        total_products_with_vat = sum(product.get('original_price', 0) for product in cart_items)
+        total_products_without_vat = sum((product.get('original_price_without_vat') or 0) for product in cart_items)
+        total_products_with_vat = sum((product.get('original_price') or 0) for product in cart_items)
         delivery_cost_to_warehouse = 5.00
-        delivery_cost_from_germany = get_delivery_cost(delivery_type_code, weight)
+        delivery_cost_from_germany = get_delivery_cost(delivery_type_code, weight) or 0
         subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
         service_commission = round(subtotal * 0.15, 2)
         # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
-        insurance_fee = round((((total_products_with_vat * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+        # Защита от None значений
+        safe_total_with_vat = total_products_with_vat or 0
+        safe_delivery_from_germany = delivery_cost_from_germany or 0
+        insurance_fee = round((((safe_total_with_vat * 0.81 + safe_delivery_from_germany + delivery_cost_to_warehouse) * 1.15) - safe_delivery_from_germany) * 0.03, 2)
         total_cost = round(subtotal + service_commission + insurance_fee, 2)
         
         # Формируем строку с общей суммой
@@ -446,12 +451,16 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
         payment_method_name = "Карта иностранного банка" if payment_method == "card" else "Криптовалюта"
         
         # Рассчитываем итоговые суммы
-        total_products_without_vat = sum(product.get('original_price_without_vat', 0) for product in cart_items)
-        total_products_with_vat = sum(product.get('original_price', 0) for product in cart_items)
+        total_products_without_vat = sum((product.get('original_price_without_vat') or 0) for product in cart_items)
+        total_products_with_vat = sum((product.get('original_price') or 0) for product in cart_items)
+        delivery_cost_from_germany = delivery_cost_from_germany or 0
         subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
         service_commission = round(subtotal * 0.15, 2)
         # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
-        insurance_fee = round((((total_products_with_vat * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+        # Защита от None значений
+        safe_total_with_vat = total_products_with_vat or 0
+        safe_delivery_from_germany = delivery_cost_from_germany or 0
+        insurance_fee = round((((safe_total_with_vat * 0.81 + safe_delivery_from_germany + delivery_cost_to_warehouse) * 1.15) - safe_delivery_from_germany) * 0.03, 2)
         total_cost = round(subtotal + service_commission + insurance_fee, 2)
         
         # Формируем сообщение для менеджера
@@ -459,25 +468,25 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
 🆕 **НОВЫЙ ЗАКАЗ!**
 
 👤 **Клиент:**
-• ФИО: {order_data.get('name', 'Не указано')}
-• Телефон: {order_data.get('phone_number', 'Не указано')}
-• Email: {order_data.get('email', 'Не указано')}
-• Адрес: {order_data.get('address', 'Не указано')}
-• Комментарий: {combined_comment}
+• ФИО: {escape_markdown(order_data.get('name', 'Не указано'))}
+• Телефон: {escape_markdown(order_data.get('phone_number', 'Не указано'))}
+• Email: {escape_markdown(order_data.get('email', 'Не указано'))}
+• Адрес: {escape_markdown(order_data.get('address', 'Не указано'))}
+• Комментарий: {escape_markdown(combined_comment)}
 
 📦 **Доставка:**
-• Тип: {delivery_type_name}
+• Тип: {escape_markdown(delivery_type_name)}
 • Вес: {weight} кг
 • Стоимость доставки до склада: €{delivery_cost_to_warehouse:.2f}
 • Стоимость доставки из Германии: €{delivery_cost_from_germany:.2f}
 
-💳 **Способ оплаты:** {payment_method_name}
+💳 **Способ оплаты:** {escape_markdown(payment_method_name)}
 
 👤 **Информация о пользователе:**
 • ID: {user_info.get('user_id', 'Не указано')}
-• Username: @{user_info.get('username', 'Не указано')}
-• Имя: {user_info.get('first_name', 'Не указано')}
-• Фамилия: {user_info.get('last_name', 'Не указано')}
+• Username: @{escape_markdown(user_info.get('username', 'Не указано'))}
+• Имя: {escape_markdown(user_info.get('first_name', 'Не указано'))}
+• Фамилия: {escape_markdown(user_info.get('last_name', 'Не указано'))}
 
 🛒 **Товары в заказе ({len(cart_items)} шт.):**
 """
@@ -488,15 +497,15 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
             price_with_vat = product.get('original_price', 0)
             
             manager_message += f"""
-{i}. **{product.get('title', 'Название не указано')}**
-   💰 Исходная цена: {product.get('price', 'Не указана')}
+{i}. **{escape_markdown(product.get('title', 'Название не указано'))}**
+   💰 Исходная цена: {escape_markdown(product.get('price', 'Не указана'))}
    💵 Без НДС: €{price_without_vat:.2f}
    💶 С НДС: €{price_with_vat:.2f}
-   🔗 Ссылка: {product.get('link', 'Не указана')}
+   🔗 Ссылка: {escape_markdown(product.get('link', 'Не указана'))}
 """
             # Добавляем комментарий к товару, если он есть
             if product.get('product_features'):
-                manager_message += f"   💬 Комментарий: {product['product_features']}\n"
+                manager_message += f"   💬 Комментарий: {escape_markdown(product['product_features'])}\n"
         
         # Добавляем общую сумму
         manager_message += f"""

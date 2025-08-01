@@ -220,7 +220,9 @@ def get_detailed_price_breakdown(cart_items: list, delivery_type: str, weight: f
     if not cart_items:
         return "🛒 Корзина пуста"
     
-    calculation_result = calculate_cart_total(cart_items[0]['price'], delivery_type, weight)
+    # Получаем числовое значение цены первого товара
+    first_item_price = extract_price_value(cart_items[0].get('price', 0)) or 0
+    calculation_result = calculate_cart_total(first_item_price, delivery_type, weight)
     delivery_type_name = get_delivery_type_name(delivery_type)
     delivery_cost = calculation_result['delivery_cost']
     service_commission = calculation_result['service_fee']
