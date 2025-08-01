@@ -32,7 +32,9 @@ DELIVERY_TYPES = {
 def calculate_item_price(original_price: float, delivery_type: str, weight: float, with_vat: bool = True) -> float:
     """
     Рассчитывает цену товара по формуле:
-    (Шаг 4 + Шаг 5 + Шаг 6) = (сумма после добавления доставки) + (сумма после добавления доставки * 0,15) + (цена товара без НДС + комиссия сервиса) * 0.03
+    Цена без НДС + Доставка до склада + Доставка из Германии + Комиссия сервиса + Страховой сбор
+    
+    Страховой сбор: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
     
     Args:
         original_price (float): Цена товара из Google Shopping
@@ -53,15 +55,17 @@ def calculate_item_price(original_price: float, delivery_type: str, weight: floa
         if delivery_cost is None:
             return 0.0
         # Цена без НДС (19%)
-        price_without_vat = original_price_clean - (original_price_clean * 0.19)
-        # Складываем доставку и цену без НДС
-        step3 = price_without_vat
-        # Добавляем стоимость доставки до РФ
-        step4 = step3 + delivery_cost
+        price_without_vat = original_price_clean * 0.81
+        delivery_cost_to_warehouse = 5.00  # Доставка до склада
+        
+        # Складываем цену без НДС + доставка из Германии + доставка до склада
+        step3 = price_without_vat + delivery_cost + delivery_cost_to_warehouse
         # Комиссия сервиса (15%)
-        step5 = step4 * 0.15
-        # Страховой сбор (3% от цены товара без НДС + комиссии сервиса, но НЕ от доставки)
-        step6 = (price_without_vat + step5) * 0.03
+        step5 = step3 * 0.15
+        # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+        step6 = ((((original_price_clean * 0.81) + delivery_cost + delivery_cost_to_warehouse) * 1.15) - delivery_cost) * 0.03
+        # Финальная сумма: цена без НДС + доставка до склада + доставка из Германии + комиссия + страховой сбор
+        step4 = price_without_vat + delivery_cost_to_warehouse + delivery_cost
         # Финальный расчет: Шаг 4 + Шаг 5 + Шаг 6
         calculated_price = step4 + step5 + step6
         # Если нужно без НДС, убираем НДС (20%)
@@ -168,9 +172,14 @@ def calculate_cart_total(original_price: float, delivery_type: str, weight: floa
     
     # Рассчитываем отдельно каждую составляющую
     original_price_clean = extract_price_value(original_price)
-    item_price_without_vat = original_price_clean - (original_price_clean * 0.19)
-    service_fee = (item_price_without_vat + delivery_cost) * 0.15
-    insurance_fee = (item_price_without_vat + service_fee) * 0.03
+    item_price_without_vat = original_price_clean * 0.81  # Цена без НДС
+    delivery_cost_to_warehouse = 5.00  # Доставка до склада
+    
+    # Комиссия сервиса: (цена без НДС + доставка из Германии + доставка до склада) * 15%
+    service_fee = (item_price_without_vat + delivery_cost + delivery_cost_to_warehouse) * 0.15
+    
+    # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+    insurance_fee = ((((original_price_clean * 0.81) + delivery_cost + delivery_cost_to_warehouse) * 1.15) - delivery_cost) * 0.03
     
     savings = price_with_vat - price_without_vat
     return {

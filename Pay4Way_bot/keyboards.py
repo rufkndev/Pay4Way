@@ -99,23 +99,24 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
     )
     return keyboard
 
-def get_delivery_type_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора типа доставки"""
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        # [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
-        # [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
-        [InlineKeyboardButton(text="🚪🔜🚪 EMS – длина до 1 500 мм", callback_data="delivery_ems")],
-    ])
-    return keyboard
+# Закомментировано - теперь автоматически выбирается EMS
+# def get_delivery_type_keyboard() -> InlineKeyboardMarkup:
+#     """Клавиатура для выбора типа доставки"""
+#     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#         # [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
+#         # [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
+#         [InlineKeyboardButton(text="🚪🔜🚪 EMS – длина до 1 500 мм", callback_data="delivery_ems")],
+#     ])
+#     return keyboard
 
-def get_delivery_type_keyboard_for_calculation() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора типа доставки в процессе расчета цены"""
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        # [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
-        # [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
-        [InlineKeyboardButton(text="🚪🔜🚪 EMS – длина до 1 500 мм", callback_data="delivery_ems")],
-    ])
-    return keyboard
+# def get_delivery_type_keyboard_for_calculation() -> InlineKeyboardMarkup:
+#     """Клавиатура для выбора типа доставки в процессе расчета цены"""
+#     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#         # [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
+#         # [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
+#         [InlineKeyboardButton(text="🚪🔜🚪 EMS – длина до 1 500 мм", callback_data="delivery_ems")],
+#     ])
+#     return keyboard
 
 def get_weight_keyboard(delivery_type: str) -> InlineKeyboardMarkup:
     """Клавиатура для выбора веса товара"""
@@ -131,8 +132,8 @@ def get_weight_keyboard(delivery_type: str) -> InlineKeyboardMarkup:
         callback_data = f"weight_{delivery_type}_{weight}"
         keyboard_buttons.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
     
-    # Добавляем кнопку назад
-    keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_delivery_type")])
+    # Добавляем кнопку назад к вводу цены
+    keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад к цене", callback_data="back_to_price_input")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
@@ -200,22 +201,10 @@ def get_add_to_cart_from_calculation_keyboard() -> InlineKeyboardMarkup:
     return keyboard
 
 def get_quantity_keyboard(product_type: str = "search") -> InlineKeyboardMarkup:
-    """Клавиатура для выбора количества товаров"""
-    quantities = [1, 2, 3, 4, 5, 10]
+    """Клавиатура только с кнопкой Назад - количество вводится вручную"""
     keyboard_buttons = []
     
-    # Создаем кнопки в 2 ряда по 3 кнопки
-    for i in range(0, len(quantities), 3):
-        row = []
-        for j in range(3):
-            if i + j < len(quantities):
-                qty = quantities[i + j]
-                callback_data = f"quantity_{product_type}_{qty}"
-                row.append(InlineKeyboardButton(text=f"{qty} шт.", callback_data=callback_data))
-        keyboard_buttons.append(row)
-    
-    # Добавляем кнопку "Другое количество" и "Назад"
-    keyboard_buttons.append([InlineKeyboardButton(text="✏️ Другое количество", callback_data=f"quantity_{product_type}_custom")])
+    # Добавляем только кнопку "Назад"
     keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_product")])
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)

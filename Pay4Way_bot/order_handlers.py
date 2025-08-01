@@ -162,8 +162,8 @@ async def process_address(message: types.Message, state: FSMContext):
             order_summary += "\n"
     subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
     service_commission = round(subtotal * 0.15, 2)
-    # Страховой сбор 3% от стоимости товара и комиссии сервиса (не включая доставку)
-    insurance_fee = round((total_products_without_vat + service_commission) * 0.03, 2)
+    # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+    insurance_fee = round(((((total_products_without_vat / 0.81) * 0.81) + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15 - delivery_cost_from_germany) * 0.03, 2)
     total_cost = round(subtotal + service_commission + insurance_fee, 2)
     savings = total_products_with_vat - total_products_without_vat
     
@@ -358,8 +358,8 @@ async def save_order_to_sheets(order_data: dict, user_info: dict, order_id: int 
         delivery_cost_from_germany = get_delivery_cost(delivery_type_code, weight)
         subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
         service_commission = round(subtotal * 0.15, 2)
-        # Страховой сбор 3% от стоимости товара и комиссии сервиса (не включая доставку)
-        insurance_fee = round((total_products_without_vat + service_commission) * 0.03, 2)
+        # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+        insurance_fee = round((((total_products_with_vat * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
         total_cost = round(subtotal + service_commission + insurance_fee, 2)
         
         # Формируем строку с общей суммой
@@ -450,8 +450,8 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
         total_products_with_vat = sum(product.get('original_price', 0) for product in cart_items)
         subtotal = total_products_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
         service_commission = round(subtotal * 0.15, 2)
-        # Страховой сбор 3% от стоимости товара и комиссии сервиса (не включая доставку)
-        insurance_fee = round((total_products_without_vat + service_commission) * 0.03, 2)
+        # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+        insurance_fee = round((((total_products_with_vat * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
         total_cost = round(subtotal + service_commission + insurance_fee, 2)
         
         # Формируем сообщение для менеджера

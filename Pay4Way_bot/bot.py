@@ -17,7 +17,7 @@ from keyboards import (
     get_help_keyboard, 
     get_product_navigation_keyboard,
     get_cart_reply_keyboard, get_main_reply_keyboard,
-    get_delivery_type_keyboard, get_delivery_type_keyboard_for_calculation, get_weight_keyboard, get_weight_keyboard_for_order, get_payment_method_keyboard, get_order_confirmation_keyboard,
+    get_weight_keyboard, get_weight_keyboard_for_order, get_payment_method_keyboard, get_order_confirmation_keyboard,
     get_price_calculation_keyboard, get_cancel_price_calculation_keyboard, get_back_keyboard, get_add_to_cart_from_calculation_keyboard
 )
 
@@ -315,17 +315,30 @@ async def cart_handler(message: types.Message, state: FSMContext):
             service_commission_per_unit = product.get('service_commission')
             total_per_unit = product.get('total')
             service_commission = service_commission_per_unit * quantity
-            total = total_per_unit * quantity
+            # Рассчитываем страховой сбор по новой формуле для сохраненных товаров
+            price_with_vat_per_unit = price_without_vat / 0.81
+            insurance_fee = round((((price_with_vat_per_unit * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03 * quantity, 2)
+            total = round((total_per_unit * quantity) + insurance_fee, 2)
         else:
             subtotal = total_price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
             service_commission = round(subtotal * 0.15, 2)
-            total = round(subtotal + service_commission, 2)
+            # Рассчитываем страховой сбор по новой формуле: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+            price_with_vat_total = total_price_without_vat / 0.81
+            insurance_fee = round((((price_with_vat_total * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+            total = round(subtotal + service_commission + insurance_fee, 2)
         
         # Вычисляем комиссию сервиса в рублях отдельно
         rub_service_commission_value = currency_service.convert_price(service_commission)
         rub_service_commission = f"{rub_service_commission_value:,.0f}".replace(',', ' ')
         cart_text += (
             f"💼 Комиссия нашего сервиса (15%): €{service_commission:.2f} или {rub_service_commission}₽\n\n"
+        )
+        
+        # Добавляем отображение страхового сбора
+        rub_insurance_fee_value = currency_service.convert_price(insurance_fee)
+        rub_insurance_fee = f"{rub_insurance_fee_value:,.0f}".replace(',', ' ')
+        cart_text += (
+            f"🛡️ Страховой сбор (3%): €{insurance_fee:.2f} или {rub_insurance_fee}₽\n\n"
         )
         if product.get('link'):
             cart_text += f"🔗 Ссылка на товар: {product['link']}\n\n"
@@ -395,21 +408,26 @@ async def input_original_price(message: types.Message, state: FSMContext):
                 "Пошлина составит 15€.\n\n"
                 "Уплатить ее будет возможно в рублях в отделении почты РФ при получении товара."
             )
-        await state.set_state(PriceCalculationStates.waiting_for_delivery_type)
+        # Автоматически устанавливаем EMS и переходим к выбору веса
+        delivery_type = "ems"
+        await state.update_data(delivery_type=delivery_type)
+        await state.set_state(PriceCalculationStates.waiting_for_weight)
         await message.answer("✅ Средняя стоимость доставки товара от интернет-магазина до нашего склада в Германии €5.00, которые уже включены в тариф доставки\n\n"
                              "❗️ Если доставка интернет-магазина бесплатная, то мы уменьшим стоимость доставки на €5.00. Если стоимость более €5.00, то мы скорректируем стоимость доставки на эту сумму.\n\n"
-                             "🚚 Теперь выберите тип отправления из Германии до России:", reply_markup=get_delivery_type_keyboard_for_calculation())
+                             "📦 Тип доставки: EMS – длина до 1 500 мм\n\n"
+                             "⚖️ Теперь выберите вес товара:", reply_markup=get_weight_keyboard(delivery_type))
     except Exception:
         await message.answer("Пожалуйста, введите корректную цену!")
 
-@dp.callback_query(lambda c: c.data.startswith("delivery_"), StateFilter(PriceCalculationStates.waiting_for_delivery_type))
-async def choose_delivery_type(callback: types.CallbackQuery, state: FSMContext):
-    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор доставки {callback.data}")
-    await callback.answer()
-    delivery_type = callback.data.replace("delivery_", "")
-    await state.update_data(delivery_type=delivery_type)
-    await state.set_state(PriceCalculationStates.waiting_for_weight)
-    await callback.message.edit_text("Выберите вес товара:", reply_markup=get_weight_keyboard(delivery_type))
+# Закомментировано - теперь автоматически устанавливается EMS
+# @dp.callback_query(lambda c: c.data.startswith("delivery_"), StateFilter(PriceCalculationStates.waiting_for_delivery_type))
+# async def choose_delivery_type(callback: types.CallbackQuery, state: FSMContext):
+#     await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор доставки {callback.data}")
+#     await callback.answer()
+#     delivery_type = callback.data.replace("delivery_", "")
+#     await state.update_data(delivery_type=delivery_type)
+#     await state.set_state(PriceCalculationStates.waiting_for_weight)
+#     await callback.message.edit_text("Выберите вес товара:", reply_markup=get_weight_keyboard(delivery_type))
 
 @dp.callback_query(lambda c: c.data.startswith("weight_"), StateFilter(PriceCalculationStates.waiting_for_weight))
 async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
@@ -434,7 +452,8 @@ async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
     rub_total = currency_service.convert_price(result['total'])
     rub_original_price_without_vat = currency_service.convert_price(data['original_price'] * 0.81)
     service_commission_amount = (original_price_without_vat + delivery_cost_to_warehouse + delivery_cost) * 0.15
-    insurance_fee_amount = (original_price_without_vat + service_commission_amount) * 0.03
+    # Новая формула страхового сбора: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+    insurance_fee_amount = (((original_price_with_vat * 0.81 + delivery_cost + delivery_cost_to_warehouse) * 1.15) - delivery_cost) * 0.03
     final_price_without_vat = original_price_without_vat + delivery_cost_to_warehouse + delivery_cost + service_commission_amount + insurance_fee_amount
     final_rub_total = currency_service.convert_price(final_price_without_vat)
     final_price_with_vat = final_price_without_vat * 1.19
@@ -647,78 +666,100 @@ async def cart_next_callback(callback: types.CallbackQuery, state: FSMContext):
     next_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[[KeyboardButton(text="💳 Оформить заказ")],[KeyboardButton(text="🗑️ Очистить корзину")]])
     await callback.message.edit_text(cart_text, reply_markup=next_keyboard, parse_mode=None)
 
-@dp.callback_query(lambda c: c.data.startswith("delivery_"), StateFilter(PriceCalculationStates.waiting_for_delivery_type))
-async def handle_delivery_type_selection_for_calculation(callback: types.CallbackQuery, state: FSMContext):
-    """Обработка выбора типа доставки для расчета цены"""
-    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор доставки для расчета {callback.data}")
+# Закомментировано - теперь автоматически устанавливается EMS
+# @dp.callback_query(lambda c: c.data.startswith("delivery_"), StateFilter(PriceCalculationStates.waiting_for_delivery_type))
+# async def handle_delivery_type_selection_for_calculation(callback: types.CallbackQuery, state: FSMContext):
+#     """Обработка выбора типа доставки для расчета цены"""
+#     await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор доставки для расчета {callback.data}")
+#     await callback.answer()
+#     
+#     from price_calculator import get_delivery_type_name
+#     
+#     delivery_type = callback.data.replace("delivery_", "")
+#     
+#     if delivery_type in ["ems"]:
+#         delivery_type_name = get_delivery_type_name(delivery_type)
+#         
+#         await state.set_state(PriceCalculationStates.waiting_for_weight)
+#         
+#         await callback.message.edit_text(
+#             f"✅ **Тип доставки выбран:** {delivery_type_name}\n\n"
+#             "⚖️ **Шаг 4: Выберите вес товара**\n\n"
+#             "Выберите подходящий вес товара:",
+#             reply_markup=get_weight_keyboard(delivery_type),
+#             parse_mode="Markdown"
+#         )
+#     else:
+#         await callback.message.edit_text(
+#             "❌ **Ошибка!** Неизвестный тип доставки.\n"
+#             "Пожалуйста, попробуйте еще раз.",
+#             reply_markup=get_delivery_type_keyboard_for_calculation()
+#         )
+
+
+
+@dp.callback_query(lambda c: c.data == "back_to_price_input", StateFilter(PriceCalculationStates.waiting_for_weight))
+async def back_to_price_input(callback: types.CallbackQuery, state: FSMContext):
+    """Возврат к вводу цены товара"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Назад к цене")
     await callback.answer()
     
-    from price_calculator import get_delivery_type_name
+    # Сохраняем корзину перед очисткой состояния
+    current_data = await state.get_data()
+    cart = current_data.get('cart', [])
     
-    delivery_type = callback.data.replace("delivery_", "")
-    
-    if delivery_type in ["ems"]:
-        delivery_type_name = get_delivery_type_name(delivery_type)
-        
-        await state.set_state(PriceCalculationStates.waiting_for_weight)
-        
-        await callback.message.edit_text(
-            f"✅ **Тип доставки выбран:** {delivery_type_name}\n\n"
-            "⚖️ **Шаг 4: Выберите вес товара**\n\n"
-            "Выберите подходящий вес товара:",
-            reply_markup=get_weight_keyboard(delivery_type),
-            parse_mode="Markdown"
-        )
-    else:
-        await callback.message.edit_text(
-            "❌ **Ошибка!** Неизвестный тип доставки.\n"
-            "Пожалуйста, попробуйте еще раз.",
-            reply_markup=get_delivery_type_keyboard_for_calculation()
-        )
-
-
-
-@dp.callback_query(lambda c: c.data == "back_to_delivery_type", StateFilter(PriceCalculationStates.waiting_for_weight))
-async def back_to_delivery_type_for_calculation(callback: types.CallbackQuery, state: FSMContext):
-    """Возврат к выбору типа доставки в процессе расчета цены"""
-    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Назад к выбору доставки")
-    await callback.answer()
-    
-    await state.set_state(PriceCalculationStates.waiting_for_delivery_type)
+    # Очищаем состояние, но сохраняем корзину
+    await state.set_data({'cart': cart})
+    await state.set_state(PriceCalculationStates.waiting_for_original_price)
     
     await callback.message.edit_text(
-        "📦 **Выберите тип доставки**\n\n"
-        "Выберите подходящий тип доставки до России:",
-        reply_markup=get_delivery_type_keyboard_for_calculation()
+        "💰 Введите цену товара:",
+        reply_markup=get_cancel_price_calculation_keyboard()
     )
 
-@dp.callback_query(lambda c: c.data == "delivery_type_callback")
-async def delivery_type_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Обработчик выбора типа доставки для заказа"""
-    await callback.answer()
-    
-    from price_calculator import get_delivery_type_name
-    
-    delivery_type = callback.data.replace("delivery_type_", "")
-    
-    if delivery_type in ["ems"]:
-        delivery_type_name = get_delivery_type_name(delivery_type)
-        
-        # Сохраняем выбранный тип доставки
-        await state.update_data(selected_delivery_type=delivery_type)
-        
-        await callback.message.edit_text(
-            f"✅ **Тип доставки выбран:** {delivery_type_name}\n\n"
-            "⚖️ **Выберите вес товара:**",
-            reply_markup=get_weight_keyboard_for_order(delivery_type),
-            parse_mode="Markdown"
-        )
-    else:
-        await callback.message.edit_text(
-            "❌ **Ошибка!** Неизвестный тип доставки.\n"
-            "Пожалуйста, попробуйте еще раз.",
-            reply_markup=get_delivery_type_keyboard()
-        )
+# Закомментировано - теперь нет этапа выбора типа доставки
+# @dp.callback_query(lambda c: c.data == "back_to_delivery_type", StateFilter(PriceCalculationStates.waiting_for_weight))
+# async def back_to_delivery_type_for_calculation(callback: types.CallbackQuery, state: FSMContext):
+#     """Возврат к выбору типа доставки в процессе расчета цены"""
+#     await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Назад к выбору доставки")
+#     await callback.answer()
+#     
+#     await state.set_state(PriceCalculationStates.waiting_for_delivery_type)
+#     
+#     await callback.message.edit_text(
+#         "📦 **Выберите тип доставки**\n\n"
+#         "Выберите подходящий тип доставки до России:",
+#         reply_markup=get_delivery_type_keyboard_for_calculation()
+#     )
+
+# Закомментировано - теперь автоматически используется EMS
+# @dp.callback_query(lambda c: c.data == "delivery_type_callback")
+# async def delivery_type_callback(callback: types.CallbackQuery, state: FSMContext):
+#     """Обработчик выбора типа доставки для заказа"""
+#     await callback.answer()
+#     
+#     from price_calculator import get_delivery_type_name
+#     
+#     delivery_type = callback.data.replace("delivery_type_", "")
+#     
+#     if delivery_type in ["ems"]:
+#         delivery_type_name = get_delivery_type_name(delivery_type)
+#         
+#         # Сохраняем выбранный тип доставки
+#         await state.update_data(selected_delivery_type=delivery_type)
+#         
+#         await callback.message.edit_text(
+#             f"✅ **Тип доставки выбран:** {delivery_type_name}\n\n"
+#             "⚖️ **Выберите вес товара:**",
+#             reply_markup=get_weight_keyboard_for_order(delivery_type),
+#             parse_mode="Markdown"
+#         )
+#     else:
+#         await callback.message.edit_text(
+#             "❌ **Ошибка!** Неизвестный тип доставки.\n"
+#             "Пожалуйста, попробуйте еще раз.",
+#             reply_markup=get_delivery_type_keyboard()
+#         )
 
 @dp.callback_query(lambda c: c.data == "start_order")
 async def start_order_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -1131,13 +1172,24 @@ async def remove_item_callback(callback: types.CallbackQuery, state: FSMContext)
                     )
                     if product.get('service_commission') and product.get('total'):
                         service_commission = product.get('service_commission')
-                        total = product.get('total')
+                        # Рассчитываем страховой сбор по новой формуле для сохраненных товаров
+                        price_with_vat_per_unit = price_without_vat / 0.81
+                        insurance_fee = round((((price_with_vat_per_unit * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+                        total = round(product.get('total') + insurance_fee, 2)
                     else:
                         subtotal = price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
                         service_commission = round(subtotal * 0.15, 2)
-                        total = round(subtotal + service_commission, 2)
+                        # Рассчитываем страховой сбор по новой формуле: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+                        price_with_vat_total = price_without_vat / 0.81
+                        insurance_fee = round((((price_with_vat_total * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+                        total = round(subtotal + service_commission + insurance_fee, 2)
                     cart_text += (
                         f"💼 Комиссия нашего сервиса (15%): €{service_commission}\n\n"
+                    )
+                    
+                    # Добавляем отображение страхового сбора
+                    cart_text += (
+                        f"🛡️ Страховой сбор (3%): €{insurance_fee:.2f}\n\n"
                     )
                     if product.get('link'):
                         cart_text += f"🔗 Ссылка на товар: {product['link']}\n\n"
@@ -1304,8 +1356,8 @@ async def navigation_callback(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("add_to_cart_"))
 async def add_to_cart_callback(callback: types.CallbackQuery, state: FSMContext):
-    """Переходит к выбору количества товара из результатов поиска"""
-    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Добавить в корзину (выбор количества)")
+    """Сразу переходит к вводу количества товара из результатов поиска"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Добавить в корзину (ввод количества)")
     user_id = callback.from_user.id
     index = int(callback.data.split("_")[3])
     if user_id in user_results:
@@ -1313,15 +1365,15 @@ async def add_to_cart_callback(callback: types.CallbackQuery, state: FSMContext)
         
         # Сохраняем информацию о выбранном товаре в состоянии
         await state.update_data(selected_product=product, selected_product_index=index)
-        await state.set_state(CartStates.waiting_for_quantity_search)
+        await state.set_state(CartStates.waiting_for_custom_quantity_search)
         
-        # Показываем клавиатуру выбора количества
+        # Просим ввести количество вручную
         from keyboards import get_quantity_keyboard
         await callback.message.edit_text(
-            f"🛒 **Выберите количество товара:**\n\n"
+            f"🛒 **Введите количество товара:**\n\n"
             f"📦 {product.get('title', 'Товар')[:100]}\n"
             f"💰 Цена: {product.get('price', 'Не указана')}\n\n"
-            f"Сколько единиц товара добавить в корзину?",
+            f"✏️ Напишите число от 1 до 999:",
             reply_markup=get_quantity_keyboard("search"),
             parse_mode="Markdown"
         )
@@ -1329,162 +1381,164 @@ async def add_to_cart_callback(callback: types.CallbackQuery, state: FSMContext)
     else:
         await callback.answer("❌ Ошибка: товар не найден")
 
-# Обработчики выбора количества товаров
-@dp.callback_query(lambda c: c.data.startswith("quantity_search_"), StateFilter(CartStates.waiting_for_quantity_search))
-async def handle_quantity_search(callback: types.CallbackQuery, state: FSMContext):
-    """Обработчик выбора количества для товара из поиска"""
-    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор количества {callback.data}")
-    await callback.answer()
-    
-    # Получаем количество из callback_data
-    quantity_str = callback.data.split("_")[2]
-    
-    if quantity_str == "custom":
-        # Пользователь хочет ввести свое количество
-        await callback.message.edit_text(
-            "✏️ **Введите количество товара:**\n\n"
-            "Напишите число от 1 до 999:",
-            parse_mode="Markdown"
-        )
-        await state.set_state(CartStates.waiting_for_custom_quantity_search)
-        return
-    
-    try:
-        quantity = int(quantity_str)
-        if quantity < 1 or quantity > 999:
-            await callback.answer("❌ Количество должно быть от 1 до 999")
-            return
-    except ValueError:
-        await callback.answer("❌ Ошибка в количестве")
-        return
-    
-    # Получаем данные о выбранном товаре
-    data = await state.get_data()
-    product = data.get('selected_product')
-    
-    if not product:
-        await callback.answer("❌ Ошибка: товар не найден")
-        return
-    
-    # Добавляем количество к товару
-    product_with_quantity = product.copy()
-    product_with_quantity['quantity'] = quantity
-    
-    # Добавляем в корзину
-    cart = data.get('cart', [])
-    cart.append(product_with_quantity)
-    await state.update_data(cart=cart)
-    
-    # Очищаем временные данные о товаре
-    await state.update_data(selected_product=None, selected_product_index=None)
-    await state.clear()
-    
-    await callback.message.edit_text(
-        f"✅ **Товар добавлен в корзину!**\n\n"
-        f"📦 {product.get('title', 'Товар')[:100]}\n"
-        f"🔢 Количество: {quantity} шт.\n"
-        f"💰 Цена за единицу: {product.get('price', 'Не указана')}\n\n"
-        f"Что делаем дальше?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🛍 Перейти в корзину", callback_data="cart")],
-            [InlineKeyboardButton(text="🔍 Продолжить поиск", callback_data="start_search")],
-            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
-        ]),
-        parse_mode="Markdown"
-    )
+# Закомментировано - теперь используется только ручной ввод количества
+# # Обработчики выбора количества товаров
+# @dp.callback_query(lambda c: c.data.startswith("quantity_search_"), StateFilter(CartStates.waiting_for_quantity_search))
+# async def handle_quantity_search(callback: types.CallbackQuery, state: FSMContext):
+#     """Обработчик выбора количества для товара из поиска"""
+#     await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор количества {callback.data}")
+#     await callback.answer()
+#     
+#     # Получаем количество из callback_data
+#     quantity_str = callback.data.split("_")[2]
+#     
+#     if quantity_str == "custom":
+#         # Пользователь хочет ввести свое количество
+#         await callback.message.edit_text(
+#             "✏️ **Введите количество товара:**\n\n"
+#             "Напишите число от 1 до 999:",
+#             parse_mode="Markdown"
+#         )
+#         await state.set_state(CartStates.waiting_for_custom_quantity_search)
+#         return
+#     
+#     try:
+#         quantity = int(quantity_str)
+#         if quantity < 1 or quantity > 999:
+#             await callback.answer("❌ Количество должно быть от 1 до 999")
+#             return
+#     except ValueError:
+#         await callback.answer("❌ Ошибка в количестве")
+#         return
+#     
+#     # Получаем данные о выбранном товаре
+#     data = await state.get_data()
+#     product = data.get('selected_product')
+#     
+#     if not product:
+#         await callback.answer("❌ Ошибка: товар не найден")
+#         return
+#     
+#     # Добавляем количество к товару
+#     product_with_quantity = product.copy()
+#     product_with_quantity['quantity'] = quantity
+#     
+#     # Добавляем в корзину
+#     cart = data.get('cart', [])
+#     cart.append(product_with_quantity)
+#     await state.update_data(cart=cart)
+#     
+#     # Очищаем временные данные о товаре
+#     await state.update_data(selected_product=None, selected_product_index=None)
+#     await state.clear()
+#     
+#     await callback.message.edit_text(
+#         f"✅ **Товар добавлен в корзину!**\n\n"
+#         f"📦 {product.get('title', 'Товар')[:100]}\n"
+#         f"🔢 Количество: {quantity} шт.\n"
+#         f"💰 Цена за единицу: {product.get('price', 'Не указана')}\n\n"
+#         f"Что делаем дальше?",
+#         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+#             [InlineKeyboardButton(text="🛍 Перейти в корзину", callback_data="cart")],
+#             [InlineKeyboardButton(text="🔍 Продолжить поиск", callback_data="start_search")],
+#             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+#         ]),
+#         parse_mode="Markdown"
+#     )
 
-@dp.callback_query(lambda c: c.data.startswith("quantity_calculated_"), StateFilter(CartStates.waiting_for_quantity_calculated))
-async def handle_quantity_calculated(callback: types.CallbackQuery, state: FSMContext):
-    """Обработчик выбора количества для рассчитанного товара"""
-    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор количества рассчитанного {callback.data}")
-    await callback.answer()
-    
-    # Получаем количество из callback_data
-    quantity_str = callback.data.split("_")[2]
-    
-    if quantity_str == "custom":
-        # Пользователь хочет ввести свое количество
-        await callback.message.edit_text(
-            "✏️ **Введите количество товара:**\n\n"
-            "Напишите число от 1 до 999:",
-            parse_mode="Markdown"
-        )
-        await state.set_state(CartStates.waiting_for_custom_quantity_calculated)
-        return
-    
-    try:
-        quantity = int(quantity_str)
-        if quantity < 1 or quantity > 999:
-            await callback.answer("❌ Количество должно быть от 1 до 999")
-            return
-    except ValueError:
-        await callback.answer("❌ Ошибка в количестве")
-        return
-    
-    # Получаем данные расчета и создаем товар (аналогично add_calculated_to_cart)
-    data = await state.get_data()
-    original_price = data.get('original_price', 0)
-    final_price = data.get('final_price', 0)
-    delivery_type = data.get('delivery_type', '')
-    weight = data.get('weight', 0)
-    product_link = data.get('product_link', '')
-    product_features = data.get('product_features', '')
-    
-    # Рассчитываем все нужные параметры
-    from price_calculator import get_delivery_cost, get_delivery_type_name, format_price_display
-    delivery_cost_from_germany = get_delivery_cost(delivery_type, weight)
-    original_price_without_vat = round(original_price * 0.81, 2)
-    delivery_cost_to_warehouse = 5.00
-    subtotal = original_price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
-    service_commission = round(subtotal * 0.15, 2)
-    total = round(subtotal + service_commission, 2)
-    
-    # Получаем красивое название типа доставки
-    delivery_type_name = get_delivery_type_name(delivery_type)
-    
-    # Создаем товар для корзины с количеством
-    calculated_product = {
-        'title': f"Товар (цена: {format_price_display(original_price)})",
-        'price': format_price_display(original_price),
-        'source': 'Расчет пользователя',
-        'link': product_link,
-        'original_price': original_price,
-        'original_price_without_vat': original_price_without_vat,
-        'delivery_type': delivery_type_name,
-        'delivery_type_code': delivery_type,
-        'weight': weight,
-        'delivery_cost_from_germany': delivery_cost_from_germany,
-        'delivery_cost_to_warehouse': delivery_cost_to_warehouse,
-        'service_commission': service_commission,
-        'total': total,
-        'calculated_price': data.get('calculated_price', 0),
-        'product_features': product_features,
-        'quantity': quantity  # Добавляем количество
-    }
-    
-    # Добавляем в корзину
-    cart_data = await state.get_data()
-    cart = cart_data.get('cart', [])
-    cart.append(calculated_product)
-    await state.update_data(cart=cart)
-    
-    # Очищаем данные расчета, но оставляем корзину
-    await state.clear()
-    await state.update_data(cart=cart)
-    
-    await callback.message.edit_text(
-        f"✅ **Рассчитанный товар добавлен в корзину!**\n\n"
-        f"📦 Товар (цена: €{original_price})\n"
-        f"🔢 Количество: {quantity} шт.\n"
-        f"💰 Общая стоимость: €{total * quantity:.2f}\n\n"
-        f"Что делаем дальше?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🛍 Перейти в корзину", callback_data="cart")],
-            [InlineKeyboardButton(text="🧮 Рассчитать еще товар", callback_data="calculate_price")],
-            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
-        ]),
-        parse_mode="Markdown"
-    )
+# Закомментировано - теперь используется только ручной ввод количества  
+# @dp.callback_query(lambda c: c.data.startswith("quantity_calculated_"), StateFilter(CartStates.waiting_for_quantity_calculated))
+# async def handle_quantity_calculated(callback: types.CallbackQuery, state: FSMContext):
+#     """Обработчик выбора количества для рассчитанного товара"""
+#     await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор количества рассчитанного {callback.data}")
+#     await callback.answer()
+#     
+#     # Получаем количество из callback_data
+#     quantity_str = callback.data.split("_")[2]
+#     
+#     if quantity_str == "custom":
+#         # Пользователь хочет ввести свое количество
+#         await callback.message.edit_text(
+#             "✏️ **Введите количество товара:**\n\n"
+#             "Напишите число от 1 до 999:",
+#             parse_mode="Markdown"
+#         )
+#         await state.set_state(CartStates.waiting_for_custom_quantity_calculated)
+#         return
+#     
+#     try:
+#         quantity = int(quantity_str)
+#         if quantity < 1 or quantity > 999:
+#             await callback.answer("❌ Количество должно быть от 1 до 999")
+#             return
+#     except ValueError:
+#         await callback.answer("❌ Ошибка в количестве")
+#         return
+#     
+#     # Получаем данные расчета и создаем товар (аналогично add_calculated_to_cart)
+#     data = await state.get_data()
+#     original_price = data.get('original_price', 0)
+#     final_price = data.get('final_price', 0)
+#     delivery_type = data.get('delivery_type', '')
+#     weight = data.get('weight', 0)
+#     product_link = data.get('product_link', '')
+#     product_features = data.get('product_features', '')
+#     
+#     # Рассчитываем все нужные параметры
+#     from price_calculator import get_delivery_cost, get_delivery_type_name, format_price_display
+#     delivery_cost_from_germany = get_delivery_cost(delivery_type, weight)
+#     original_price_without_vat = round(original_price * 0.81, 2)
+#     delivery_cost_to_warehouse = 5.00
+#     subtotal = original_price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
+#     service_commission = round(subtotal * 0.15, 2)
+#     total = round(subtotal + service_commission, 2)
+#     
+#     # Получаем красивое название типа доставки
+#     delivery_type_name = get_delivery_type_name(delivery_type)
+#     
+#     # Создаем товар для корзины с количеством
+#     calculated_product = {
+#         'title': f"Товар (цена: {format_price_display(original_price)})",
+#         'price': format_price_display(original_price),
+#         'source': 'Расчет пользователя',
+#         'link': product_link,
+#         'original_price': original_price,
+#         'original_price_without_vat': original_price_without_vat,
+#         'delivery_type': delivery_type_name,
+#         'delivery_type_code': delivery_type,
+#         'weight': weight,
+#         'delivery_cost_from_germany': delivery_cost_from_germany,
+#         'delivery_cost_to_warehouse': delivery_cost_to_warehouse,
+#         'service_commission': service_commission,
+#         'total': total,
+#         'calculated_price': data.get('calculated_price', 0),
+#         'product_features': product_features,
+#         'quantity': quantity  # Добавляем количество
+#     }
+#     
+#     # Добавляем в корзину
+#     cart_data = await state.get_data()
+#     cart = cart_data.get('cart', [])
+#     cart.append(calculated_product)
+#     await state.update_data(cart=cart)
+#     
+#     # Очищаем данные расчета, но оставляем корзину
+#     await state.clear()
+#     await state.update_data(cart=cart)
+#     
+#     await callback.message.edit_text(
+#         f"✅ **Рассчитанный товар добавлен в корзину!**\n\n"
+#         f"📦 Товар (цена: €{original_price})\n"
+#         f"🔢 Количество: {quantity} шт.\n"
+#         f"💰 Общая стоимость: €{total * quantity:.2f}\n\n"
+#         f"Что делаем дальше?",
+#         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+#             [InlineKeyboardButton(text="🛍 Перейти в корзину", callback_data="cart")],
+#             [InlineKeyboardButton(text="🧮 Рассчитать еще товар", callback_data="calculate_price")],
+#             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+#         ]),
+#         parse_mode="Markdown"
+#     )
 
 # Обработчики ввода пользовательского количества
 @dp.message(CartStates.waiting_for_custom_quantity_search)
@@ -1748,17 +1802,30 @@ async def cart_callback(callback: types.CallbackQuery, state: FSMContext):
                 service_commission_per_unit = product.get('service_commission')
                 total_per_unit = product.get('total')
                 service_commission = service_commission_per_unit * quantity
-                total = total_per_unit * quantity
+                # Рассчитываем страховой сбор по новой формуле для сохраненных товаров
+                price_with_vat_per_unit = price_without_vat / 0.81
+                insurance_fee = round((((price_with_vat_per_unit * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03 * quantity, 2)
+                total = round((total_per_unit * quantity) + insurance_fee, 2)
             else:
                 subtotal = total_price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
                 service_commission = round(subtotal * 0.15, 2)
-                total = round(subtotal + service_commission, 2)
+                # Рассчитываем страховой сбор по новой формуле: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+                price_with_vat_total = total_price_without_vat / 0.81
+                insurance_fee = round((((price_with_vat_total * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+                total = round(subtotal + service_commission + insurance_fee, 2)
             
             # Вычисляем комиссию сервиса в рублях отдельно
             rub_service_commission_value = currency_service.convert_price(service_commission)
             rub_service_commission = f"{rub_service_commission_value:,.0f}".replace(',', ' ')
             cart_text += (
                 f"💼 Комиссия нашего сервиса (15%): €{service_commission:.2f} или {rub_service_commission}₽\n\n"
+            )
+            
+            # Добавляем отображение страхового сбора
+            rub_insurance_fee_value = currency_service.convert_price(insurance_fee)
+            rub_insurance_fee = f"{rub_insurance_fee_value:,.0f}".replace(',', ' ')
+            cart_text += (
+                f"🛡️ Страховой сбор (3%): €{insurance_fee:.2f} или {rub_insurance_fee}₽\n\n"
             )
             if product.get('link'):
                 cart_text += f"🔗 Ссылка на товар: {product['link']}\n\n"
@@ -1835,13 +1902,16 @@ async def handle_original_price(message: types.Message, state: FSMContext):
     # Сохраняем итоговую цену
     await state.update_data(final_price=original_price)
     
-    await state.set_state(PriceCalculationStates.waiting_for_delivery_type)
+    # Автоматически устанавливаем EMS и переходим к выбору веса
+    delivery_type = "ems"
+    await state.update_data(delivery_type=delivery_type)
+    await state.set_state(PriceCalculationStates.waiting_for_weight)
     
     await message.answer(
         f"✅ **Итоговая цена принята:** {format_price_display(original_price)}\n\n"
-        "📦 Шаг 3 **Выбор типа доставки из Германии до России**\n\n"
-        "🚚 Теперь выберите тип отправления из Германии до России:",
-        reply_markup=get_delivery_type_keyboard_for_calculation(),
+        "📦 Шаг 3 **Тип доставки: EMS – длина до 1 500 мм**\n\n"
+        "⚖️ Теперь выберите вес товара:",
+        reply_markup=get_weight_keyboard(delivery_type),
         parse_mode="Markdown"
     )
 
@@ -1867,8 +1937,8 @@ async def cancel_price_calculation(callback: types.CallbackQuery, state: FSMCont
 
 @dp.callback_query(lambda c: c.data == "select_quantity_calculated")
 async def select_quantity_calculated(callback: types.CallbackQuery, state: FSMContext):
-    """Переход к выбору количества рассчитанного товара"""
-    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Выбор количества рассчитанного товара")
+    """Сразу переходит к вводу количества рассчитанного товара"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Ввод количества рассчитанного товара")
     
     # Получаем данные расчета для отображения
     data = await state.get_data()
@@ -1876,17 +1946,17 @@ async def select_quantity_calculated(callback: types.CallbackQuery, state: FSMCo
     product_link = data.get('product_link', '')
     product_features = data.get('product_features', '')
     
-    await state.set_state(CartStates.waiting_for_quantity_calculated)
+    await state.set_state(CartStates.waiting_for_custom_quantity_calculated)
     
-    # Показываем клавиатуру выбора количества
+    # Просим ввести количество вручную
     from keyboards import get_quantity_keyboard
     await callback.message.edit_text(
-        f"🛒 **Выберите количество товара:**\n\n"
+        f"🛒 **Введите количество товара:**\n\n"
         f"📦 Рассчитанный товар\n"
         f"💰 Цена: €{original_price}\n"
         f"🔗 Ссылка: {product_link[:50]}{'...' if len(product_link) > 50 else ''}\n"
         f"📝 Особенности: {product_features[:50]}{'...' if len(product_features) > 50 else ''}\n\n"
-        f"Сколько единиц товара добавить в корзину?",
+        f"✏️ Напишите число от 1 до 999:",
         reply_markup=get_quantity_keyboard("calculated"),
         parse_mode="Markdown"
     )
@@ -1986,7 +2056,7 @@ async def add_calculated_to_cart(callback: types.CallbackQuery, state: FSMContex
 
 @dp.callback_query(lambda c: c.data == "back_to_delivery_type_order")
 async def back_to_delivery_type_order_handler(callback: types.CallbackQuery, state: FSMContext):
-    """Возврат к выбору типа доставки в процессе оформления заказа"""
+    """Возврат к оформлению заказа - автоматически используем EMS"""
     await callback.answer()
     
     # Получаем данные корзины
@@ -2013,12 +2083,14 @@ async def back_to_delivery_type_order_handler(callback: types.CallbackQuery, sta
         cart_text += "\n"
     
     cart_text += f"📊 **Итого товаров:** {len(cart)} шт.\n\n"
-    cart_text += "💡 Выберите тип доставки для расчета стоимости:"
+    cart_text += "📦 **Тип доставки:** EMS – длина до 1 500 мм\n\n"
+    cart_text += "⚖️ Теперь выберите вес товара:"
     
-    # Создаем клавиатуру для выбора типа доставки
-    delivery_keyboard = get_delivery_type_keyboard()
+    # Автоматически используем EMS
+    delivery_type = "ems"
+    await state.update_data(selected_delivery_type=delivery_type)
     
-    await callback.message.edit_text(cart_text, parse_mode="Markdown", reply_markup=delivery_keyboard)
+    await callback.message.edit_text(cart_text, parse_mode="Markdown", reply_markup=get_weight_keyboard_for_order(delivery_type))
 
 
 @dp.callback_query(lambda c: c.data == "payment_ok")
@@ -2100,7 +2172,6 @@ async def back_to_cart_callback(callback: types.CallbackQuery, state: FSMContext
         weight = product.get('weight', 1.0)
         delivery_cost_from_germany = product.get('delivery_cost_from_germany', 12.94)
         rub_delivery_from_germany = f"{currency_service.convert_price(delivery_cost_from_germany):,.0f}".replace(',', ' ')
-        rub_service_commission = f"{currency_service.convert_price(service_commission):,.0f}".replace(',', ' ')
         cart_text += (
             f"📦 Доставка из Германии до РФ:\n\n"
             f"Тип: {delivery_type}\n"
@@ -2111,14 +2182,27 @@ async def back_to_cart_callback(callback: types.CallbackQuery, state: FSMContext
         # Используем сохранённые расчёты или рассчитываем заново
         if product.get('service_commission') and product.get('total'):
             service_commission = product.get('service_commission')
-            total = product.get('total')
+            # Рассчитываем страховой сбор по новой формуле для сохраненных товаров
+            price_with_vat_per_unit = price_without_vat / 0.81
+            insurance_fee = round((((price_with_vat_per_unit * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+            total = round(product.get('total') + insurance_fee, 2)
         else:
             subtotal = price_without_vat + delivery_cost_to_warehouse + delivery_cost_from_germany
             service_commission = round(subtotal * 0.15, 2)
-            total = round(subtotal + service_commission, 2)
+            # Рассчитываем страховой сбор по новой формуле: ((((Цена*0,81)+Доставка+Склад)*1,15)-Доставка)*0,03
+            price_with_vat_total = price_without_vat / 0.81
+            insurance_fee = round((((price_with_vat_total * 0.81 + delivery_cost_from_germany + delivery_cost_to_warehouse) * 1.15) - delivery_cost_from_germany) * 0.03, 2)
+            total = round(subtotal + service_commission + insurance_fee, 2)
         
+        rub_service_commission = f"{currency_service.convert_price(service_commission):,.0f}".replace(',', ' ')
         cart_text += (
             f"💼 Комиссия нашего сервиса (15%): €{service_commission:.2f} или {rub_service_commission}₽\n\n"
+        )
+        
+        # Добавляем отображение страхового сбора
+        rub_insurance_fee = f"{currency_service.convert_price(insurance_fee):,.0f}".replace(',', ' ')
+        cart_text += (
+            f"🛡️ Страховой сбор (3%): €{insurance_fee:.2f} или {rub_insurance_fee}₽\n\n"
         )
         if product.get('link'):
             cart_text += f"🔗 Ссылка на товар: {product['link']}\n\n"
