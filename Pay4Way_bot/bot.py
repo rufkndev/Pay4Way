@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from dotenv import load_dotenv
 from services.scrapingbee_service import search_idealo_products
 from services.currency_service import currency_service, CurrencyService
+from services.google_sheets_service import GoogleSheetsService
 from price_calculator import calculate_cart_total, format_price_display, get_delivery_type_name, get_delivery_cost
 from keyboards import (
     get_help_keyboard, 
@@ -47,6 +48,31 @@ dp = Dispatcher(storage=storage)
 # Подключаем роутеры
 
 # Сервис поиска товаров теперь импортируется как функция
+
+# Инициализация Google Sheets сервиса для логирования
+try:
+    sheets_service = GoogleSheetsService()
+except Exception as e:
+    logging.error(f"Ошибка инициализации Google Sheets сервиса: {e}")
+    sheets_service = None
+
+# Helper функция для логирования действий пользователя
+async def log_user_action(user_id: int, username: str, action: str):
+    """Логирует действие пользователя в Google Sheets асинхронно"""
+    if sheets_service:
+        try:
+            # Запускаем логирование как фоновую задачу, чтобы не блокировать ответ
+            asyncio.create_task(log_user_action_background(user_id, username, action))
+        except Exception as e:
+            logging.error(f"Ошибка создания задачи логирования: {e}")
+
+async def log_user_action_background(user_id: int, username: str, action: str):
+    """Фоновое логирование действий пользователя"""
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, sheets_service.log_user_action, user_id, username, action)
+    except Exception as e:
+        logging.error(f"Ошибка фонового логирования: {e}")
 
 from formatting_utils import format_price_with_rub, format_total_with_savings
 
@@ -99,6 +125,7 @@ product_urls = {}
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    await log_user_action(message.from_user.id, message.from_user.username, "Команда /start")
     welcome_text = """
 💯 Pay4Way — сервис №1 в России для выгодных международных покупок!
 
@@ -122,6 +149,7 @@ async def cmd_start(message: types.Message):
 
 @dp.callback_query(lambda c: c.data == "start_go")
 async def on_go_clicked(callback: types.CallbackQuery):
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Поехали")
     await callback.message.edit_reply_markup()  # Удаляем кнопку
     await callback.message.answer("🚀", reply_markup=get_main_reply_keyboard())
     await callback.answer()
@@ -130,6 +158,7 @@ async def on_go_clicked(callback: types.CallbackQuery):
 @dp.message(lambda message: message.text == "🔍 Поиск товаров")
 async def search_handler(message: types.Message, state: FSMContext):
     """Обработчик кнопки поиск товаров"""
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Поиск товаров")
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
     
@@ -142,6 +171,7 @@ async def search_handler(message: types.Message, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "start_search")
 async def start_search_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки начала поиска"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Начать поиск")
     await state.set_state(SearchStates.waiting_for_query)
     await callback.message.answer("🔍 Введите марку и модель товара на английском (например, Nike zoom):")
     await callback.message.answer("🔍")
@@ -149,6 +179,7 @@ async def start_search_callback(callback: types.CallbackQuery, state: FSMContext
 @dp.message(lambda message: message.text == "❓ Кто мы")
 async def about_handler(message: types.Message, state: FSMContext):
     """Обработчик кнопки информация о нас"""
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Кто мы")
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
     
@@ -172,6 +203,7 @@ Kotkova 50/16, Liberec XIV-Ruprechtice, 460 14 Liberec
 @dp.message(lambda message: message.text == "🚨 Поддержка")
 async def contacts_handler(message: types.Message, state: FSMContext):
     """Обработчик кнопки контакты"""
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Поддержка")
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
     
@@ -195,6 +227,7 @@ https://pay4way.ru"""
 
 @dp.message(lambda message: message.text == "🛍 Корзина")
 async def cart_handler(message: types.Message, state: FSMContext):
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Корзина")
     # Сохраняем корзину перед очисткой состояния
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
@@ -321,6 +354,7 @@ async def cart_handler(message: types.Message, state: FSMContext):
 
 @dp.message(lambda message: message.text == "🧮 Рассчитать доставку")
 async def start_price_calculation(message: types.Message, state: FSMContext):
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Рассчитать доставку")
     # Сохраняем корзину перед очисткой состояния
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
@@ -332,6 +366,7 @@ async def start_price_calculation(message: types.Message, state: FSMContext):
 
 @dp.message(PriceCalculationStates.waiting_for_original_price)
 async def input_original_price(message: types.Message, state: FSMContext):
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод цены товара: {message.text}")
     try:
         original_price = float(message.text.replace('€', '').replace(',', '.').strip())
         await state.update_data(original_price=original_price)
@@ -354,6 +389,7 @@ async def input_original_price(message: types.Message, state: FSMContext):
 
 @dp.callback_query(lambda c: c.data.startswith("delivery_"), StateFilter(PriceCalculationStates.waiting_for_delivery_type))
 async def choose_delivery_type(callback: types.CallbackQuery, state: FSMContext):
+    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор доставки {callback.data}")
     await callback.answer()
     delivery_type = callback.data.replace("delivery_", "")
     await state.update_data(delivery_type=delivery_type)
@@ -362,6 +398,7 @@ async def choose_delivery_type(callback: types.CallbackQuery, state: FSMContext)
 
 @dp.callback_query(lambda c: c.data.startswith("weight_"), StateFilter(PriceCalculationStates.waiting_for_weight))
 async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
+    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор веса {callback.data}")
     await callback.answer()
     try:
         delivery_type, weight = parse_weight_callback_data(callback.data)
@@ -414,6 +451,7 @@ async def choose_weight(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(PriceCalculationStates.waiting_for_product_link)
 async def input_product_link(message: types.Message, state: FSMContext):
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод ссылки на товар: {message.text[:100]}")
     product_link = message.text.strip()
     
     # Проверяем, что это корректная ссылка
@@ -432,6 +470,7 @@ async def input_product_link(message: types.Message, state: FSMContext):
 
 @dp.message(PriceCalculationStates.waiting_for_product_features)
 async def input_product_features(message: types.Message, state: FSMContext):
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод особенностей товара: {message.text}")
     features = message.text.strip()
     await state.update_data(product_features=features)
     await state.set_state(PriceCalculationStates.showing_result)
@@ -458,6 +497,7 @@ async def calculate_price_again_product(callback: types.CallbackQuery, state: FS
 @dp.message(lambda message: message.text == "⬅️ Назад")
 async def back_handler(message: types.Message, state: FSMContext):
     """Обработчик кнопки назад"""
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Назад")
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
     
@@ -590,6 +630,7 @@ async def cart_next_callback(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data.startswith("delivery_"), StateFilter(PriceCalculationStates.waiting_for_delivery_type))
 async def handle_delivery_type_selection_for_calculation(callback: types.CallbackQuery, state: FSMContext):
     """Обработка выбора типа доставки для расчета цены"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Выбор доставки для расчета {callback.data}")
     await callback.answer()
     
     from price_calculator import get_delivery_type_name
@@ -620,6 +661,7 @@ async def handle_delivery_type_selection_for_calculation(callback: types.Callbac
 @dp.callback_query(lambda c: c.data == "back_to_delivery_type", StateFilter(PriceCalculationStates.waiting_for_weight))
 async def back_to_delivery_type_for_calculation(callback: types.CallbackQuery, state: FSMContext):
     """Возврат к выбору типа доставки в процессе расчета цены"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Назад к выбору доставки")
     await callback.answer()
     
     await state.set_state(PriceCalculationStates.waiting_for_delivery_type)
@@ -722,6 +764,7 @@ async def cancel_order_handler(callback: types.CallbackQuery, state: FSMContext)
 
 @dp.message(lambda message: message.text == "🗑️ Очистить корзину")
 async def clear_cart_reply_handler(message: types.Message, state: FSMContext):
+    await log_user_action(message.from_user.id, message.from_user.username, "Кнопка: Очистить корзину (reply)")
     await state.update_data(cart=[])
     text = "🗑️ **Ваша корзина очищена!**"
     await message.answer(text, reply_markup=get_cart_reply_keyboard(), parse_mode="Markdown")
@@ -731,6 +774,7 @@ async def clear_cart_reply_handler(message: types.Message, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "back_to_main")
 async def back_to_main_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки назад в главное меню"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Назад в главное меню")
     # Сохраняем корзину перед очисткой состояния
     current_data = await state.get_data()
     cart = current_data.get('cart', [])
@@ -1008,6 +1052,7 @@ https://yourcompany.com/support
 
 @dp.callback_query(lambda c: c.data == "clear_cart")
 async def clear_cart_callback(callback: types.CallbackQuery, state: FSMContext):
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Очистить корзину")
     await state.update_data(cart=[])
     text = "🗑️ **Ваша корзина очищена!**"
     await callback.message.answer(text, parse_mode="Markdown")
@@ -1016,6 +1061,7 @@ async def clear_cart_callback(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data.startswith("remove_item_"))
 async def remove_item_callback(callback: types.CallbackQuery, state: FSMContext):
     """Удаление отдельного товара из корзины с обновлением сообщения"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Удалить товар {callback.data}")
     await callback.answer()
     try:
         item_index = int(callback.data.split("_")[2])
@@ -1107,6 +1153,7 @@ async def remove_item_callback(callback: types.CallbackQuery, state: FSMContext)
 @dp.message(SearchStates.waiting_for_query)
 async def process_search_query(message: types.Message, state: FSMContext):
     """Обработчик поискового запроса (с сохранением истории для листания)"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Поиск товара: {message.text[:50]}")
     query = message.text.strip()
     if len(query) < 2:
         await message.answer("❌ Слишком короткий запрос. Введите минимум 2 символа. Попробуйте еще раз.")
@@ -1226,6 +1273,7 @@ async def show_product_card(message: types.Message, user_id: int, index: int):
 @dp.callback_query(lambda c: c.data.startswith("nav_"))
 async def navigation_callback(callback: types.CallbackQuery):
     """Обработчик навигации по товарам (вперёд/назад)"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, f"Кнопка: Навигация {callback.data}")
     user_id = callback.from_user.id
     index = int(callback.data.split("_")[1])
     if user_id in user_results:
@@ -1237,6 +1285,7 @@ async def navigation_callback(callback: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("add_to_cart_"))
 async def add_to_cart_callback(callback: types.CallbackQuery, state: FSMContext):
     """Добавляет товар из результатов поиска в корзину"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Добавить в корзину")
     user_id = callback.from_user.id
     index = int(callback.data.split("_")[3])
     if user_id in user_results:
@@ -1256,6 +1305,7 @@ async def add_to_cart_callback(callback: types.CallbackQuery, state: FSMContext)
 
 @dp.callback_query(lambda c: c.data == "cart")
 async def cart_callback(callback: types.CallbackQuery, state: FSMContext):
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Корзина (callback)")
     data = await state.get_data()
     cart = data.get('cart', [])
     
@@ -1403,6 +1453,7 @@ async def start_price_calculation(callback: types.CallbackQuery, state: FSMConte
 @dp.message(PriceCalculationStates.waiting_for_original_price)
 async def handle_original_price(message: types.Message, state: FSMContext):
     """Обработка ввода цены товара"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод цены товара (обработчик 2): {message.text}")
     from price_calculator import extract_price_value, format_price_display
     
     price_text = message.text.strip()
@@ -1575,6 +1626,7 @@ async def back_to_delivery_type_order_handler(callback: types.CallbackQuery, sta
 @dp.callback_query(lambda c: c.data == "payment_ok")
 async def payment_ok_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Ок, меня все устраивает'"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Ок, меня все устраивает")
     await callback.answer()
     
     # Начинаем процесс оформления заказа
@@ -1712,6 +1764,7 @@ async def back_to_cart_callback(callback: types.CallbackQuery, state: FSMContext
 @dp.message(PriceCalculationStates.waiting_for_product_link)
 async def handle_product_link(message: types.Message, state: FSMContext):
     """Обработка ввода ссылки на товар"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод ссылки на товар (обработчик 2): {message.text[:100]}")
     from price_calculator import format_price_display
     
     product_link = message.text.strip()
@@ -1793,10 +1846,12 @@ async def main():
 @dp.message()
 async def echo_message(message: types.Message):
     """Обработчик всех остальных сообщений"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Неопознанное сообщение: {message.text[:50] if message.text else 'Не текст'}")
     await message.answer("Пожалуйста, используйте кнопки в меню или под сообщением !", parse_mode="Markdown")
 
 @dp.callback_query(lambda c: c.data == "order_from_cart")
 async def start_order_from_cart(callback: types.CallbackQuery, state: FSMContext):
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Оформить заказ")
     # Показываем сообщение о способах оплаты
     payment_message = (
         "💳 Мы принимаем оплату в криптовалюте или картой иностранного банка"
@@ -1813,6 +1868,7 @@ async def start_order_from_cart(callback: types.CallbackQuery, state: FSMContext
 @dp.callback_query(lambda c: c.data == "no_link")
 async def no_link_callback(callback: types.CallbackQuery):
     """Обработчик для случая отсутствия ссылки на товар"""
+    await log_user_action(callback.from_user.id, callback.from_user.username, "Кнопка: Отсутствует ссылка")
     await callback.answer("⚠️ Попробуйте другой товар или новый поиск.")
 
 if __name__ == "__main__":

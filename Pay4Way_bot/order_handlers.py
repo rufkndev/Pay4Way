@@ -13,9 +13,37 @@ import urllib.parse
 from price_calculator import calculate_cart_total, format_price_display
 from formatting_utils import format_total_with_savings, format_price_with_rub
 from services.currency_service import currency_service
+from services.google_sheets_service import GoogleSheetsService
 
 # Загружаем переменные окружения
 load_dotenv()
+
+# Инициализация Google Sheets сервиса для логирования
+try:
+    sheets_service = GoogleSheetsService()
+except Exception as e:
+    logging.error(f"Ошибка инициализации Google Sheets сервиса в order_handlers: {e}")
+    sheets_service = None
+
+# Helper функция для логирования действий пользователя
+async def log_user_action(user_id: int, username: str, action: str):
+    """Логирует действие пользователя в Google Sheets асинхронно"""
+    if sheets_service:
+        try:
+            # Запускаем логирование как фоновую задачу, чтобы не блокировать ответ
+            import asyncio
+            asyncio.create_task(log_user_action_background(user_id, username, action))
+        except Exception as e:
+            logging.error(f"Ошибка создания задачи логирования в order_handlers: {e}")
+
+async def log_user_action_background(user_id: int, username: str, action: str):
+    """Фоновое логирование действий пользователя"""
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, sheets_service.log_user_action, user_id, username, action)
+    except Exception as e:
+        logging.error(f"Ошибка фонового логирования в order_handlers: {e}")
 
 # Состояния для оформления заказа
 class OrderStates(StatesGroup):
@@ -29,6 +57,7 @@ class OrderStates(StatesGroup):
 
 async def process_name(message: types.Message, state: FSMContext):
     """Обработчик ввода ФИО"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод ФИО: {message.text}")
     name = message.text
     await state.update_data(name=name)
     await message.answer("📱 Пожалуйста, введите номер телефона в формате 79998887766:")
@@ -36,6 +65,7 @@ async def process_name(message: types.Message, state: FSMContext):
 
 async def process_phone_number(message: types.Message, state: FSMContext):
     """Обработчик ввода телефона"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод телефона: {message.text}")
     phone_number = message.text
     await state.update_data(phone_number=phone_number)
     await message.answer("📧 Пожалуйста, введите ваш email:")
@@ -43,6 +73,7 @@ async def process_phone_number(message: types.Message, state: FSMContext):
 
 async def process_email(message: types.Message, state: FSMContext):
     """Обработчик ввода email"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод email: {message.text}")
     email = message.text
     await state.update_data(email=email)
     await message.answer("📍 Пожалуйста, введите ваш адрес для доставки в Россию в следующем формате: индекс, город, улица, дом, квартира")
@@ -50,6 +81,7 @@ async def process_email(message: types.Message, state: FSMContext):
 
 async def process_address(message: types.Message, state: FSMContext):
     """Обработчик ввода адреса"""
+    await log_user_action(message.from_user.id, message.from_user.username, f"Ввод адреса: {message.text[:50]}")
     address = message.text
     await state.update_data(address=address)
     # После адреса сразу показываем сводку и подтверждение

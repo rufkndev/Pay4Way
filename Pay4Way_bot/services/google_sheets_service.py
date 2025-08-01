@@ -45,6 +45,12 @@ class GoogleSheetsService:
         self.spreadsheet_id = service_account_data.get('spreadsheet_id') or os.getenv('GOOGLE_SHEETS_ID', 'your_spreadsheet_id_here')
         logging.info(f"ID таблицы: {self.spreadsheet_id}")
         
+        # ID таблицы для логирования из переменных окружения
+        self.log_spreadsheet_id = os.getenv('GOOGLE_SHEETS_LOG_ID')
+        if not self.log_spreadsheet_id:
+            logging.warning("Не найдена переменная GOOGLE_SHEETS_LOG_ID. Логирование действий пользователей отключено.")
+            self.log_spreadsheet_id = None
+        
         # Проверяем, есть ли ID таблицы
         if not self.spreadsheet_id or self.spreadsheet_id == 'your_spreadsheet_id_here':
             raise ValueError("Не найден ID таблицы Google Sheets. Добавьте 'spreadsheet_id' в JSON файл сервисного аккаунта или установите переменную GOOGLE_SHEETS_ID в .env")
@@ -142,4 +148,84 @@ class GoogleSheetsService:
             
         except Exception as e:
             print(f"Ошибка при получении количества заказов: {str(e)}")
-            return 0 
+            return 0
+    
+    async def log_user_action_async(self, user_id: int, username: str, action: str) -> bool:
+        """
+        Логирует действие пользователя в Google Sheets
+        
+        Args:
+            user_id (int): ID пользователя Telegram
+            username (str): Username пользователя или "Не указано"  
+            action (str): Описание действия
+            
+        Returns:
+            bool: True если успешно, False если ошибка
+        """
+        try:
+            # Проверяем, что ID таблицы логирования установлен
+            if not self.log_spreadsheet_id:
+                logging.warning("ID таблицы логирования не установлен. Пропускаем логирование.")
+                return False
+                
+            # Открываем таблицу для логирования
+            spreadsheet = self.client.open_by_key(self.log_spreadsheet_id)
+            worksheet = spreadsheet.sheet1
+            
+            # Получаем текущую дату и время
+            current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Формируем username
+            username_formatted = f"@{username}" if username and username != "None" else "Не указано"
+            
+            # Подготавливаем данные для записи
+            row_data = [
+                user_id,  # A: ID пользователя
+                username_formatted,  # B: Имя пользователя  
+                current_datetime,  # C: Временная метка
+                action  # D: Действие
+            ]
+            
+            # Добавляем строку в таблицу
+            worksheet.append_row(row_data)
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Ошибка при логировании действия пользователя: {str(e)}")
+            return False
+    
+    def log_user_action(self, user_id: int, username: str, action: str) -> bool:
+        """Синхронная версия логирования (упрощенная)"""
+        try:
+            # Проверяем, что ID таблицы логирования установлен
+            if not self.log_spreadsheet_id:
+                logging.warning("ID таблицы логирования не установлен. Пропускаем логирование.")
+                return False
+                
+            # Открываем таблицу для логирования
+            spreadsheet = self.client.open_by_key(self.log_spreadsheet_id)
+            worksheet = spreadsheet.sheet1
+            
+            # Получаем текущую дату и время
+            current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Формируем username
+            username_formatted = f"@{username}" if username and username != "None" else "Не указано"
+            
+            # Подготавливаем данные для записи
+            row_data = [
+                user_id,  # A: ID пользователя
+                username_formatted,  # B: Имя пользователя  
+                current_datetime,  # C: Временная метка
+                action  # D: Действие
+            ]
+            
+            # Добавляем строку в таблицу
+            worksheet.append_row(row_data)
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Ошибка при логировании действия пользователя: {str(e)}")
+            return False 
