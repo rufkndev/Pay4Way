@@ -6,6 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from keyboards import get_cart_reply_keyboard, get_main_reply_keyboard
 import logging
 import os
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -44,6 +45,14 @@ async def log_user_action_background(user_id: int, username: str, action: str):
         await loop.run_in_executor(None, sheets_service.log_user_action, user_id, username, action)
     except Exception as e:
         logging.error(f"Ошибка фонового логирования в order_handlers: {e}")
+
+def escape_markdown(text: str) -> str:
+    """Экранирует специальные символы Markdown"""
+    if not text:
+        return ""
+    # Экранируем специальные символы Markdown
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # Состояния для оформления заказа
 class OrderStates(StatesGroup):
@@ -99,39 +108,55 @@ async def process_address(message: types.Message, state: FSMContext):
     from formatting_utils import format_price_with_rub, format_total_with_savings
     delivery_cost_to_warehouse = 5.00  # Фиксированная стоимость
     delivery_cost_from_germany = get_delivery_cost(delivery_type_code, weight)
+    # Сначала рассчитываем общее количество товаров
+    total_quantity = sum(product.get('quantity', 1) for product in cart_items)
+    
     order_summary = f"""
 **Проверьте данные заказа:**
 
-👤 **ФИО:** {order_data.get('name', 'Не указано')}
-📱 **Телефон:** {order_data.get('phone_number', 'Не указано')}
-📧 **Email:** {order_data.get('email', 'Не указано')}
-📍 **Адрес:** {order_data.get('address', 'Не указано')}
+👤 **ФИО:** {escape_markdown(order_data.get('name', 'Не указано'))}
+📱 **Телефон:** {escape_markdown(order_data.get('phone_number', 'Не указано'))}
+📧 **Email:** {escape_markdown(order_data.get('email', 'Не указано'))}
+📍 **Адрес:** {escape_markdown(order_data.get('address', 'Не указано'))}
 ━━━━━
-🛍 **Товары в корзине ({len(cart_items)} шт.):**
+🛍 **Товары в корзине ({len(cart_items)} позиций, {total_quantity} шт. всего):**
 """
     total_products_without_vat = 0
     total_products_with_vat = 0
     rub_price_without_vat = 0
     for i, product in enumerate(cart_items, 1):
-        price_without_vat = product.get('original_price_without_vat', 0)
-        price_with_vat = product.get('original_price', 0)
-        if price_without_vat == 0 or price_with_vat == 0:
+        quantity = product.get('quantity', 1)  # Получаем количество товара
+        
+        price_without_vat_per_unit = product.get('original_price_without_vat', 0)
+        price_with_vat_per_unit = product.get('original_price', 0)
+        
+        if price_without_vat_per_unit == 0 or price_with_vat_per_unit == 0:
             price = product.get('price', 0)
             if isinstance(price, str):
                 price = price.replace('€', '').replace('$', '').replace('₽', '').replace(',', '.').strip()
             try:
-                price_with_vat = float(price)
-                price_without_vat = round(price_with_vat * 0.81, 2)
+                price_with_vat_per_unit = float(price)
+                price_without_vat_per_unit = round(price_with_vat_per_unit * 0.81, 2)
             except Exception:
-                price_with_vat = 0.0
-                price_without_vat = 0.0
-        total_products_without_vat += price_without_vat
-        total_products_with_vat += price_with_vat
-        rub_price_without_vat = currency_service.convert_price(price_without_vat)
-        order_summary += f"{i}. **{product['title']}**\n"
-        order_summary += f"   💶 Цена: {price_without_vat} € или {f'{rub_price_without_vat:,.0f}'.replace(',', ' ')} ₽ без НДС \n"
+                price_with_vat_per_unit = 0.0
+                price_without_vat_per_unit = 0.0
+        
+        # Рассчитываем общую стоимость с учетом количества
+        total_price_without_vat = price_without_vat_per_unit * quantity
+        total_price_with_vat = price_with_vat_per_unit * quantity
+        
+        total_products_without_vat += total_price_without_vat
+        total_products_with_vat += total_price_with_vat
+        
+        rub_price_without_vat = currency_service.convert_price(total_price_without_vat)
+        title = escape_markdown(product.get('title', 'Товар без названия'))
+        order_summary += f"{i}. **{title}** (Количество: {quantity} шт.)\n"
+        order_summary += f"   💶 Цена: {total_price_without_vat:.2f} € или {f'{rub_price_without_vat:,.0f}'.replace(',', ' ')} ₽ без НДС\n"
+        if quantity > 1:
+            order_summary += f"   ├ За единицу: {price_without_vat_per_unit:.2f} € × {quantity} шт.\n"
         if product.get('link'):
-            order_summary += f"   🔗 Ссылка: {product['link']}"
+            link = escape_markdown(product['link'])
+            order_summary += f"   🔗 Ссылка: {link}\n"
         # Добавляем перевод строки только если это не последний товар
         if i < len(cart_items):
             order_summary += "\n"
@@ -152,20 +177,20 @@ async def process_address(message: types.Message, state: FSMContext):
 ━━━━━
 **ИТОГО:**
 
-🪙 **Стоимость товаров:** {total_products_without_vat} € или {f'{rub_total_products:,.0f}'.replace(',', ' ')} ₽
+🪙 **Стоимость товаров:** {total_products_without_vat:.2f} € или {f'{rub_total_products:,.0f}'.replace(',', ' ')} ₽
 
-🚚 **Стоимость доставки от интернет-магазина до нашего склада в германии:** {delivery_cost_to_warehouse} € или {f'{rub_delivery_to_warehouse:,.0f}'.replace(',', ' ')} ₽
+🚚 **Стоимость доставки от интернет-магазина до нашего склада в германии:** {delivery_cost_to_warehouse:.2f} € или {f'{rub_delivery_to_warehouse:,.0f}'.replace(',', ' ')} ₽
 
 📦 **Доставка из Германии до РФ:**
-   Тип: {delivery_type_name}
-   Вес: {weight} кг
-   Стоимость доставки: {delivery_cost_from_germany} € или {f'{rub_delivery_from_germany:,.0f}'.replace(',', ' ')} ₽
+   Тип: {escape_markdown(delivery_type_name)}
+   Вес: {weight:.1f} кг
+   Стоимость доставки: {delivery_cost_from_germany:.2f} € или {f'{rub_delivery_from_germany:,.0f}'.replace(',', ' ')} ₽
 
-💼 **Комиссия сервиса (15%):** {service_commission} € или {f'{rub_service_commission:,.0f}'.replace(',', ' ')} ₽
+💼 **Комиссия сервиса (15%):** {service_commission:.2f} € или {f'{rub_service_commission:,.0f}'.replace(',', ' ')} ₽
 
-💶 **ИТОГО:** {total_cost} или {f'{rub_total_cost:,.0f}'.replace(',', ' ')} ₽
+💶 **ИТОГО:** {total_cost:.2f} € или {f'{rub_total_cost:,.0f}'.replace(',', ' ')} ₽
 
-*Экономия состовляет {savings:.2f} € или {f'{rub_savings:,.0f}'.replace(',', ' ')} ₽*
+*Экономия составляет {savings:.2f} € или {f'{rub_savings:,.0f}'.replace(',', ' ')} ₽*
 
 Всё верно?
 """

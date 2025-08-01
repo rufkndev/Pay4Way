@@ -193,8 +193,29 @@ def get_cancel_price_calculation_keyboard() -> InlineKeyboardMarkup:
 def get_add_to_cart_from_calculation_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для добавления товара в корзину после расчета"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data="add_calculated_to_cart")],
+        [InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data="select_quantity_calculated")],
         [InlineKeyboardButton(text="🛍 Перейти в корзину", callback_data="cart")],
         [InlineKeyboardButton(text="🧮 Рассчитать доставку еще одного товара", callback_data="calculate_price_again_product")],
     ])
     return keyboard
+
+def get_quantity_keyboard(product_type: str = "search") -> InlineKeyboardMarkup:
+    """Клавиатура для выбора количества товаров"""
+    quantities = [1, 2, 3, 4, 5, 10]
+    keyboard_buttons = []
+    
+    # Создаем кнопки в 2 ряда по 3 кнопки
+    for i in range(0, len(quantities), 3):
+        row = []
+        for j in range(3):
+            if i + j < len(quantities):
+                qty = quantities[i + j]
+                callback_data = f"quantity_{product_type}_{qty}"
+                row.append(InlineKeyboardButton(text=f"{qty} шт.", callback_data=callback_data))
+        keyboard_buttons.append(row)
+    
+    # Добавляем кнопку "Другое количество" и "Назад"
+    keyboard_buttons.append([InlineKeyboardButton(text="✏️ Другое количество", callback_data=f"quantity_{product_type}_custom")])
+    keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_product")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)

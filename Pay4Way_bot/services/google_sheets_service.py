@@ -81,18 +81,25 @@ class GoogleSheetsService:
             # Получаем товары из заказа
             cart_items = order_data.get('cart_items', [])
             
-            # Формируем строку с товарами и ссылками
+            # Формируем строку с товарами, ссылками и количествами
             items_info = []
+            quantities_info = []
+            total_quantity = 0
+            
             for i, item in enumerate(cart_items, 1):
                 title = item.get('title', 'Название не указано')
                 shipping = item.get('shipping', 'Доставка не указана')
                 price = item.get('price', 'Цена не указана')
                 link = item.get('link', 'Ссылка не указана')
                 source = item.get('source', 'Магазин не указан')
+                quantity = item.get('quantity', 1)  # Получаем количество, по умолчанию 1
                 
-                items_info.append(f"{i}. {title} - {price} ({source})")
+                total_quantity += quantity
+                items_info.append(f"{i}. {title} - {price} ({source}) [Кол-во: {quantity} шт.]")
+                quantities_info.append(f"{i}. {quantity} шт.")
             
             items_text = "\n".join(items_info) if items_info else "Товары не указаны"
+            quantities_text = "\n".join(quantities_info) if quantities_info else "Количества не указаны"
             
             # Формируем строку со ссылками на товары
             links_info = []
@@ -113,7 +120,7 @@ class GoogleSheetsService:
                 order_data.get('address', ''),  # Адрес
                 order_data.get('comment', ''),  # Комментарий
                 order_data.get('total_amount', ''),  # Общая сумма
-                order_data.get('items_count', ''),  # Количество товаров
+                quantities_text,  # Количество товаров по каждой позиции
                 items_text,  # Список товаров
                 links_text,  # Ссылки на товары
                 order_data.get('telegram_id', ''),  # Telegram ID пользователя
