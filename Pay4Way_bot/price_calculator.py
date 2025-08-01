@@ -4,21 +4,21 @@
 
 # Константы для типов доставки и их цен
 DELIVERY_TYPES = {
-    "small_package": {
-        "name": "Маленький пакет",
-        "weights": {
-            1: 12.94,
-            2: 18.5
-        }
-    },
-    "standard_package": {
-        "name": "Стандартный пакет", 
-        "weights": {
-            1: 19.04, 2: 22.69, 3: 24.23, 4: 26.16, 5: 27.7, 6: 29.24, 7: 30.78, 8: 32.78,
-            9: 34.32, 10: 35.86, 11: 31.45, 12: 32.99, 13: 34.53, 14: 36.07, 15: 37.61,
-            16: 39.15, 17: 40.69, 18: 42.23, 19: 43.77, 20: 45.31
-        }
-    },
+    # "small_package": {
+    #     "name": "Маленький пакет",
+    #     "weights": {
+    #         1: 12.94,
+    #         2: 18.5
+    #     }
+    # },
+    # "standard_package": {
+    #     "name": "Стандартный пакет", 
+    #     "weights": {
+    #         1: 19.04, 2: 22.69, 3: 24.23, 4: 26.16, 5: 27.7, 6: 29.24, 7: 30.78, 8: 32.78,
+    #         9: 34.32, 10: 35.86, 11: 31.45, 12: 32.99, 13: 34.53, 14: 36.07, 15: 37.61,
+    #         16: 39.15, 17: 40.69, 18: 42.23, 19: 43.77, 20: 45.31
+    #     }
+    # },
     "ems": {
         "name": "EMS",
         "weights": {
@@ -36,7 +36,7 @@ def calculate_item_price(original_price: float, delivery_type: str, weight: floa
     
     Args:
         original_price (float): Цена товара из Google Shopping
-        delivery_type (str): Тип доставки ('small_package', 'standard_package', 'ems')
+        delivery_type (str): Тип доставки ('ems')
         weight (float): Вес товара в кг
         with_vat (bool): С НДС или без НДС
         

@@ -102,8 +102,8 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
 def get_delivery_type_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для выбора типа доставки"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
-        [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
+        # [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
+        # [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
         [InlineKeyboardButton(text="🚪🔜🚪 EMS – длина до 1 500 мм", callback_data="delivery_ems")],
     ])
     return keyboard
@@ -111,8 +111,8 @@ def get_delivery_type_keyboard() -> InlineKeyboardMarkup:
 def get_delivery_type_keyboard_for_calculation() -> InlineKeyboardMarkup:
     """Клавиатура для выбора типа доставки в процессе расчета цены"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
-        [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
+        # [InlineKeyboardButton(text="🛍 До 2 кг и длиной до 600 мм", callback_data="delivery_small_package")],
+        # [InlineKeyboardButton(text="📦 Стандарт - длина до 1 005 мм", callback_data="delivery_standard_package")],
         [InlineKeyboardButton(text="🚪🔜🚪 EMS – длина до 1 500 мм", callback_data="delivery_ems")],
     ])
     return keyboard

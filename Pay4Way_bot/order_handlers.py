@@ -60,7 +60,7 @@ async def process_address(message: types.Message, state: FSMContext):
         return
     # Получаем данные из первого товара в корзине (они должны быть одинаковыми для всех товаров)
     first_product = cart_items[0]
-    delivery_type_code = first_product.get('delivery_type_code', 'small_package')  # Используем код для расчетов
+    delivery_type_code = first_product.get('delivery_type_code', 'ems')  # Используем код для расчетов
     delivery_type_name = first_product.get('delivery_type', 'Маленький пакет')  # Используем название для отображения
     weight = first_product.get('weight', 1.0)
     from price_calculator import get_delivery_type_name, format_price_display, get_delivery_cost
@@ -279,7 +279,7 @@ async def save_order_to_sheets(order_data: dict, user_info: dict, order_id: int 
         
         # Получаем данные из первого товара в корзине
         first_product = cart_items[0]
-        delivery_type_code = first_product.get('delivery_type_code', 'small_package')
+        delivery_type_code = first_product.get('delivery_type_code', 'ems')
         weight = first_product.get('weight', 1.0)
         payment_method = order_data.get('payment_method', 'card')
         
@@ -367,7 +367,7 @@ async def send_order_to_manager(order_data: dict, user_info: dict, cart_items: l
         
         # Получаем данные из первого товара в корзине
         first_product = cart_items[0]
-        delivery_type_code = first_product.get('delivery_type_code', 'small_package')
+        delivery_type_code = first_product.get('delivery_type_code', 'ems')
         weight = first_product.get('weight', 1.0)
         payment_method = order_data.get('payment_method', 'card')
         
@@ -514,7 +514,7 @@ async def save_order_to_local_file(order_data: dict, user_info: dict, cart_items
         
         # Получаем данные из первого товара в корзине
         first_product = cart_items[0]
-        delivery_type_code = first_product.get('delivery_type_code', 'small_package')
+        delivery_type_code = first_product.get('delivery_type_code', 'ems')
         weight = first_product.get('weight', 1.0)
         payment_method = order_data.get('payment_method', 'card')
         

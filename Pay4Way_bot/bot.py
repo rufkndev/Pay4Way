@@ -596,7 +596,7 @@ async def handle_delivery_type_selection_for_calculation(callback: types.Callbac
     
     delivery_type = callback.data.replace("delivery_", "")
     
-    if delivery_type in ["small_package", "standard_package", "ems"]:
+    if delivery_type in ["ems"]:
         delivery_type_name = get_delivery_type_name(delivery_type)
         
         await state.set_state(PriceCalculationStates.waiting_for_weight)
@@ -639,7 +639,7 @@ async def delivery_type_callback(callback: types.CallbackQuery, state: FSMContex
     
     delivery_type = callback.data.replace("delivery_type_", "")
     
-    if delivery_type in ["small_package", "standard_package", "ems"]:
+    if delivery_type in ["ems"]:
         delivery_type_name = get_delivery_type_name(delivery_type)
         
         # Сохраняем выбранный тип доставки
