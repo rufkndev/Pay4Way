@@ -123,38 +123,50 @@ def get_weight_keyboard(delivery_type: str) -> InlineKeyboardMarkup:
     from price_calculator import get_available_weights, get_delivery_cost
     
     weights = get_available_weights(delivery_type)
-    keyboard_buttons = []
+    keyboard_rows = []
+    buttons = []
     
     # Создаем кнопки для каждого доступного веса
     for weight in weights:
         delivery_cost = get_delivery_cost(delivery_type, weight)
-        button_text = f"⚖️ {weight} кг (€{delivery_cost:.2f})"
+        button_text = f"До {weight} кг (€{delivery_cost:.2f})"
         callback_data = f"weight_{delivery_type}_{weight}"
-        keyboard_buttons.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
+        buttons.append(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+    
+    # Разделяем кнопки на ряды по 3 кнопки
+    chunk_size = 3
+    for i in range(0, len(buttons), chunk_size):
+        keyboard_rows.append(buttons[i:i + chunk_size])
     
     # Добавляем кнопку назад к вводу цены
-    keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад к цене", callback_data="back_to_price_input")])
+    keyboard_rows.append([InlineKeyboardButton(text="⬅️ Назад к цене", callback_data="back_to_price_input")])
     
-    return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
 def get_weight_keyboard_for_order(delivery_type: str) -> InlineKeyboardMarkup:
     """Клавиатура для выбора веса товара при оформлении заказа"""
     from price_calculator import get_available_weights, get_delivery_cost
     
     weights = get_available_weights(delivery_type)
-    keyboard_buttons = []
+    keyboard_rows = []
+    buttons = []
     
     # Создаем кнопки для каждого доступного веса
     for weight in weights:
         delivery_cost = get_delivery_cost(delivery_type, weight)
-        button_text = f"⚖️ {weight} кг (€{delivery_cost:.2f})"
+        button_text = f"До {weight} кг (€{delivery_cost:.2f})"
         callback_data = f"weight_{delivery_type}_{weight}"
-        keyboard_buttons.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
+        buttons.append(InlineKeyboardButton(text=button_text, callback_data=callback_data))
+    
+    # Разделяем кнопки на ряды по 3 кнопки
+    chunk_size = 3
+    for i in range(0, len(buttons), chunk_size):
+        keyboard_rows.append(buttons[i:i + chunk_size])
     
     # Добавляем кнопку назад к выбору типа доставки
-    keyboard_buttons.append([InlineKeyboardButton(text="⬅️ Назад к выбору типа доставки", callback_data="back_to_delivery_type_order")])
+    keyboard_rows.append([InlineKeyboardButton(text="⬅️ Назад к выбору типа доставки", callback_data="back_to_delivery_type_order")])
     
-    return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
 def get_payment_method_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для выбора способа оплаты"""
